@@ -6,7 +6,7 @@ CWD = os.getcwd()
 
 # Function to move files to a new folder if they're directly in the root
 def move_files_to_new_folder():
-    all_files = [f for f in os.listdir(CWD) if f.lower().endswith((".png", ".jpg", ".avif", ".txt"))]
+    all_files = [f for f in os.listdir(CWD) if f.lower().endswith((".png", ".jpg", ".avif", ".webp", ".txt"))]
 
     if all_files:
         new_folder = os.path.join(CWD, "files")
@@ -88,7 +88,7 @@ def copy_comicinfo():
 # Function to update metadata in "ComicInfo.xml" based on the folder content and "info.txt"
 def metadata(folder_path):
     metadata_dict = {}
-    count_png, count_jpg, count_avif = 0, 0, 0
+    count_png, count_jpg, count_avif, count_webp = 0, 0, 0, 0
     for file_name in os.listdir(folder_path):
         if file_name.endswith(".png"):
             count_png += 1
@@ -96,8 +96,10 @@ def metadata(folder_path):
             count_jpg += 1
         elif file_name.endswith(".avif"):
             count_avif += 1
+        elif file_name.endswith(".webp"):
+            count_webp += 1
 
-    count_all = count_png + count_jpg + count_avif
+    count_all = count_png + count_jpg + count_avif + count_webp
 
     folder_count = sum(os.path.isdir(os.path.join(CWD, item)) for item in os.listdir(CWD))
 
@@ -149,12 +151,14 @@ def convert():
     for foldername, subfolders, filenames in os.walk(CWD):
         for filename in filenames:
             filepath = os.path.join(foldername, filename)
-            if filename.lower().endswith((".png", ".avif", ".jpg")):
+            if filename.lower().endswith((".png", ".avif", ".jpg", ".webp")):
                 try:
                     os.system(f'magick mogrify -format jpg -quality 100 -resize x2500 "{filepath}"')  # Convert and resize image
                     if filename.lower().endswith(".png"):
                         os.remove(filepath)
                     elif filename.lower().endswith(".avif"):
+                        os.remove(filepath)
+                    elif filename.lower().endswith(".webp"):
                         os.remove(filepath)
                 except Exception as e:
                     print(f"Error converting file {filepath}: {e}")
