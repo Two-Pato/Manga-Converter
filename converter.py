@@ -3,6 +3,24 @@ import shutil
 
 CWD = os.getcwd()
 
+
+# Function to move files to a new folder if they're directly in the root
+def move_files_to_new_folder():
+    all_files = [f for f in os.listdir(CWD) if f.lower().endswith((".png", ".jpg", ".avif", ".txt"))]
+
+    if all_files:
+        new_folder = os.path.join(CWD, "files")
+        os.makedirs(new_folder, exist_ok=True)
+
+        for file in all_files:
+            try:
+                shutil.move(os.path.join(CWD, file), os.path.join(new_folder, file))
+                print(f"Moved '{file}' to '{new_folder}'")
+            except Exception as e:
+                print(f"Error moving file '{file}': {e}")
+    else:
+        print("No image or text files found to move.")
+
 # Function to search for the "info.txt" file in the current directory or its subdirectories
 def find_info_file():
     for root, dirs, files in os.walk(CWD):
@@ -184,8 +202,10 @@ def zip_and_rename():
             except Exception as e:
                 print(f"Error zipping and renaming {folder_path}: {e}")
 
+
 # Main process function
 def process_manga():
+    move_files_to_new_folder()
     create_folder()
     copy_comicinfo()
     metadata_subfolders()
