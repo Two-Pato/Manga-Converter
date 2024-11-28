@@ -121,25 +121,34 @@ def metadata(folder_path):
         with open(comicinfo_path, 'r') as comic_info_file:
             lines = comic_info_file.readlines()
 
-            # Update the fields in the "ComicInfo.xml" file
-            if len(lines) > 2:
-                lines[2] = f"  <Title>{metadata_dict.get('Original_Title', '')}</Title>\n"
-            if len(lines) > 3:
-                lines[3] = f"  <LocalizedSeries>{metadata_dict.get('Title', '')}</LocalizedSeries>\n"
-            if len(lines) > 4:
-                lines[4] = f"  <Writer>{metadata_dict.get('Artist', '')}</Writer>\n"
-            if len(lines) > 6:
-                folder_number = folder_path[-2:]  # Extract the folder number from the folder name
-                if folder_number.startswith("0") and len(folder_number) == 2:
-                    folder_number = folder_number[1]  # Remove leading zero
-                lines[6] = f"  <Number>{folder_number}</Number>\n"
-            if len(lines) > 7:
-                lines[7] = f"  <Count>{folder_count}</Count>\n"
-            if len(lines) > 8:
-                lines[8] = f"  <PageCount>{count_all}</PageCount>\n"
-            if len(lines) > 10:
-                lines[10] = f"  <Tags>{metadata_dict.get('Tags', '')}</Tags>\n"
+            # Update <Title>
+            for i, line in enumerate(lines):
+                if "<Title>" in line:
+                    lines[i] = f"  <Title>{metadata_dict.get('Original_Title', '')}</Title>\n"
+                # Update <LocalizedSeries> if it's not the same as <Title>
+                elif "<LocalizedSeries>" in line:
+                    if metadata_dict.get('Original_Title', '') == metadata_dict.get('Title', ''):
+                        lines[i] = "  <LocalizedSeries></LocalizedSeries>\n"  # Empty if both titles are the same
+                    else:
+                        lines[i] = f"  <LocalizedSeries>{metadata_dict.get('Title', '')}</LocalizedSeries>\n"
+                # Update <Writer> (Artist)
+                elif "<Writer>" in line:
+                    lines[i] = f"  <Writer>{metadata_dict.get('Artist', '')}</Writer>\n"
+                # Update <Number> with the folder number
+                elif "<Number>" in line:
+                    folder_number = folder_path[-2:]  # Extract the last two characters of folder name
+                    if folder_number.startswith("0") and len(folder_number) == 2:
+                        folder_number = folder_number[1]  # Remove leading zero if any
+                    lines[i] = f"  <Number>{folder_number}</Number>\n"
+                # Update <Count> and other fields
+                elif "<Count>" in line:
+                    lines[i] = f"  <Count>{folder_count}</Count>\n"
+                elif "<PageCount>" in line:
+                    lines[i] = f"  <PageCount>{count_all}</PageCount>\n"
+                elif "<Tags>" in line:
+                    lines[i] = f"  <Tags>{metadata_dict.get('Tags', '')}</Tags>\n"
 
+        # Save the updated ComicInfo.xml
         with open(comicinfo_path, 'w') as comic_info_file:
             comic_info_file.writelines(lines)
 
