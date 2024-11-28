@@ -6,20 +6,44 @@ CWD = os.getcwd()
 
 # Function to move files to a new folder if they're directly in the root
 def move_files_to_new_folder():
-    all_files = [f for f in os.listdir(CWD) if f.lower().endswith((".png", ".jpg", ".avif", ".webp", ".txt"))]
+    # List all directories in the current directory (excluding files)
+    existing_folders = [f for f in os.listdir(CWD) if os.path.isdir(os.path.join(CWD, f))]
 
-    if all_files:
-        new_folder = os.path.join(CWD, "files")
-        os.makedirs(new_folder, exist_ok=True)
-
-        for file in all_files:
-            try:
-                shutil.move(os.path.join(CWD, file), os.path.join(new_folder, file))
-                print(f"Moved '{file}' to '{new_folder}'")
-            except Exception as e:
-                print(f"Error moving file '{file}': {e}")
+    if existing_folders:
+        print(f"At least one folder exists. Skipping folder creation.")
+        new_folder = os.path.join(CWD, existing_folders[0])  # Use the first existing folder
     else:
-        print("No image or text files found to move.")
+        # If no folders exist, create a new folder named "files"
+        new_folder = os.path.join(CWD, "files")
+        os.makedirs(new_folder)
+        print(f"Created new folder: {new_folder}")
+
+    # List all files in the current directory (no directories)
+    all_files = [f for f in os.listdir(CWD) if os.path.isfile(os.path.join(CWD, f))]
+
+    if not all_files:
+        print("No files found to move.")
+        return
+
+    for file in all_files:
+        source = os.path.join(CWD, file)
+        destination = os.path.join(new_folder, file)
+
+        # Handle potential filename conflicts
+        if os.path.exists(destination):
+            base, ext = os.path.splitext(file)
+            counter = 1
+            # Generate a new filename with a counter suffix to avoid overwriting
+            while os.path.exists(destination):
+                new_name = f"{base}_{counter}{ext}"
+                destination = os.path.join(new_folder, new_name)
+                counter += 1
+
+        try:
+            shutil.move(source, destination)
+            print(f"Moved '{file}' to '{new_folder}'")
+        except Exception as e:
+            print(f"Error moving file '{file}': {e}")
 
 # Function to search for the "info.txt" file in the current directory or its subdirectories
 def find_info_file():
@@ -63,8 +87,9 @@ def create_folder():
                 # Check if the folder already exists before renaming
                 if not os.path.exists(folder_renamed):
                     os.rename(os.path.join(CWD, folder), folder_renamed)
+                    print(f"Renamed folder '{folder}' to '{folder_renamed}'.")
                 else:
-                    print(f"Folder '{folder_renamed}' already exists.")
+                    print(f"Folder '{folder_renamed}' already exists, skipping.")
 
         except Exception as e:
             print(f"Error processing 'info.txt': {e}")
@@ -75,31 +100,34 @@ def create_folder():
 def copy_comicinfo():
     folder_comicinfo_old = os.path.join(os.path.dirname(os.path.realpath(__file__)), "data", "ComicInfo.xml")
     
+    # Check if "ComicInfo.xml" exists in the "data" directory
     if not os.path.exists(folder_comicinfo_old):
         print("ComicInfo.xml not found in the 'data' directory.")
         return
 
     for root, dirs, files in os.walk(CWD):
         for folder in dirs:
+            # Construct the path for the new location of ComicInfo.xml in each subfolder
             folder_comicinfo_new = os.path.join(root, folder, "ComicInfo.xml")
+            
+            # Check if "ComicInfo.xml" already exists in the subfolder
             if not os.path.exists(folder_comicinfo_new):
-                shutil.copy(folder_comicinfo_old, folder_comicinfo_new)
+                try:
+                    # Copy the ComicInfo.xml from the source to the subfolder
+                    shutil.copy(folder_comicinfo_old, folder_comicinfo_new)
+                    print(f"Copied ComicInfo.xml to {folder_comicinfo_new}")
+                except Exception as e:
+                    # Handle any errors during the copy operation
+                    print(f"Error copying file to {folder_comicinfo_new}: {e}")
 
 # Function to update metadata in "ComicInfo.xml" based on the folder content and "info.txt"
 def metadata(folder_path):
     metadata_dict = {}
-    count_png, count_jpg, count_avif, count_webp = 0, 0, 0, 0
-    for file_name in os.listdir(folder_path):
-        if file_name.endswith(".png"):
-            count_png += 1
-        elif file_name.endswith(".jpg"):
-            count_jpg += 1
-        elif file_name.endswith(".avif"):
-            count_avif += 1
-        elif file_name.endswith(".webp"):
-            count_webp += 1
+    count_all = 0
 
-    count_all = count_png + count_jpg + count_avif + count_webp
+    for file_name in os.listdir(folder_path):
+        if not (file_name.endswith(".txt") or file_name.endswith(".xml")):
+            count_all += 1
 
     folder_count = sum(os.path.isdir(os.path.join(CWD, item)) for item in os.listdir(CWD))
 
