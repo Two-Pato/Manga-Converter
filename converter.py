@@ -19,8 +19,9 @@ def move_files_to_new_folder():
     else:
         # If no folders exist, create a new folder named "temp"
         new_folder = os.path.join(CWD, "temp")
+        folder_name = os.path.basename(new_folder)
         os.makedirs(new_folder)
-        print(f"Created new folder: {new_folder}")
+        print(f"Created new folder: '{folder_name}' in '{CWD}'")
 
     # List all files in the current directory (no directories)
     all_files = [f for f in os.listdir(CWD) if os.path.isfile(os.path.join(CWD, f))]
@@ -48,7 +49,7 @@ def move_files_to_new_folder():
 
         try:
             shutil.move(source, destination)
-            print(f"Moved '{file}' to '{new_folder}'")
+            print(f"Moved '{file}' to '{folder_name}'")
         except Exception as e:
             print(f"Error moving file '{file}': {e}")
 
@@ -64,10 +65,10 @@ def check_comic_info():
     folder_states = {}
     
     # Walk through directories once to check both files and copy where needed
-    for root, dirs, files in os.walk(CWD):
-        dirs.sort()
+    for root, subfolder, files in os.walk(CWD):
+        subfolder.sort()
         
-        for folder in dirs:
+        for folder in subfolder:
             comicinfo_path = os.path.join(root, folder, "ComicInfo.xml")
             info_path = os.path.join(root, folder, "info.txt")
             
@@ -79,36 +80,37 @@ def check_comic_info():
             folder_states[folder] = folder_status
 
             # Print the folder status and info.txt existence
-            print(f"Folder: {folder} - Status: {folder_status} - info.txt: {info_found}")
+            print(f"Folder: '{folder}' - Status: {folder_status} - info.txt: {info_found}")
             
             # If the folder is incomplete and ComicInfo.xml doesn't exist, copy it from the data folder
             if folder_status == "Incomplete" and not comicinfo_exists:
                 folder_comicinfo_new = os.path.join(root, folder, "ComicInfo.xml")
+                folder_name = os.path.basename(os.path.join(root, folder))
                 try:
                     shutil.copy(folder_comicinfo_old, folder_comicinfo_new)
-                    print(f"Folder: {folder} is incomplete, copied ComicInfo.xml to {folder_comicinfo_new}")
+                    print(f"Folder: '{folder}' is incomplete, copied ComicInfo.xml to {folder_name}")
                 except Exception as e:
-                    print(f"Error copying file to {folder_comicinfo_new}: {e}")
+                    print(f"Error copying file to {folder_name}: {e}")
             else:
-                print(f"Folder: {folder} is complete, no need to copy ComicInfo.xml.")
+                print(f"Folder: '{folder}' is complete, no need to copy ComicInfo.xml.")
     
     return folder_states
 
 
 def convert(folder_states):
     # Walk through the directory structure
-    for root, dirs, files in os.walk(CWD):
+    for root, subfolder, files in os.walk(CWD):
         # Sort the files alphabetically
         files.sort()
         
         folder_name = os.path.basename(root)
         
         if folder_states.get(folder_name) == "Complete":
-            print(f"Folder: {folder_name} is complete. Skipping image conversion.")
+            print(f"Folder: '{folder_name}' is complete. Skipping image conversion.")
             continue  # Skip this folder and move to the next
         
         elif folder_states.get(folder_name) == "Incomplete":
-            print(f"Folder: {folder_name} is incomplete. Starting image conversion.")
+            print(f"Folder: '{folder_name}' is incomplete. Starting image conversion.")
         
         for filename in files:
             filepath = os.path.join(root, filename)
@@ -138,7 +140,7 @@ def convert(folder_states):
 def rename_folders():
     # Walk through all directories to find the 'info.txt' file in the folders
     info_txt_path = None
-    for root, dirs, files in os.walk(CWD):
+    for root, subfolder, files in os.walk(CWD):
         # Look for info.txt in each folder
         if "info.txt" in files:
             info_txt_path = os.path.join(root, "info.txt")
@@ -176,7 +178,7 @@ def rename_folders():
                 os.rename(old_folder_path, folder_renamed)
                 print(f"Renamed folder '{os.path.relpath(old_folder_path, CWD)}' to '{os.path.relpath(folder_renamed, CWD)}'.")
             else:
-                print(f"Folder: {os.path.relpath(folder_renamed, CWD)} already exists. Skipping renaming folder.")
+                print(f"Folder: '{os.path.relpath(folder_renamed, CWD)}' already exists. Skipping renaming folder.")
 
     except Exception as e:
         print(f"Error processing 'info.txt': {e}")
@@ -184,7 +186,7 @@ def rename_folders():
 
 # Function to rename image files sequentially
 def rename_jpgs(folder_states):
-    for root, dirs, files in os.walk(CWD):
+    for root, subfolder, files in os.walk(CWD):
         # Only consider jpg files in the current folder
         jpg_files = [file for file in files if file.lower().endswith(".jpg")]
         jpg_files.sort()
@@ -192,11 +194,11 @@ def rename_jpgs(folder_states):
         # Check folder completion status from folder_states
         relative_foldername = os.path.relpath(root, CWD)  # Get the relative path of the folder
         if folder_states.get(relative_foldername) == "Complete":
-            print(f"Folder: {relative_foldername} is complete. Skipping renaming images.")
+            print(f"Folder: '{relative_foldername}' is complete. Skipping renaming images.")
             continue  # Skip this folder and move to the next
         
         elif folder_states.get(relative_foldername) == "Incomplete":
-            print(f"Folder: {relative_foldername} is incomplete. Starting renaming images.")
+            print(f"Folder: '{relative_foldername}' is incomplete. Starting renaming images.")
 
             # Rename files to a sequential format (e.g., 001.jpg, 002.jpg, etc.)
             for i, image in enumerate(jpg_files):
@@ -218,7 +220,7 @@ def metadata():
     folder_count = 0
 
     # Iterate through the subdirectories in the current working directory (skip root folder)
-    for root, dirs, files in os.walk(CWD):
+    for root, subfolder, files in os.walk(CWD):
         # Skip the root folder, process only subfolders
         if root == CWD:
             continue
@@ -237,7 +239,8 @@ def metadata():
         comicinfo_path = os.path.join(root, "ComicInfo.xml")
         
         if not os.path.exists(info_txt_path):
-            print(f"info.txt not found in folder: {root}. Skipping metadata update.")
+            folder_name = os.path.basename(root)
+            print(f"Error: 'info.txt' not found in folder: '{folder_name}'. Skipping metadata update.")
             continue
 
         # Read metadata from the "info.txt" file
@@ -253,7 +256,7 @@ def metadata():
                     elif "TAGS:" in line:
                         metadata_dict["Tags"] = line.split("TAGS: ", maxsplit=1)[-1].rstrip()
         except Exception as e:
-            print(f"Error reading info.txt for {root}: {e}")
+            print(f"Error reading 'info.txt' for {root}: {e}")
             continue
 
         # Check if ComicInfo.xml exists in the current folder
@@ -294,11 +297,14 @@ def metadata():
                 with open(comicinfo_path, 'w') as comic_info_file:
                     comic_info_file.writelines(lines)
 
-                print(f"Updated ComicInfo.xml for {root}.")
+                folder_name = os.path.basename(root)
+                print(f"Updated 'ComicInfo.xml' for '{folder_name}'.")
             except Exception as e:
-                print(f"Error processing ComicInfo.xml for {root}: {e}")
+                folder_name = os.path.basename(root)
+                print(f"Error processing 'ComicInfo.xml' for '{folder_name}': {e}")
         else:
-            print(f"ComicInfo.xml not found in folder {root}. Skipping update.")
+            folder_name = os.path.basename(root)
+            print(f"'ComicInfo.xml' not found in folder '{folder_name}'. Skipping update.")
 
 
 # Function to update ComicInfo.xml fields like <Number> and <Count>
@@ -323,8 +329,8 @@ def check_comicinfo_number_and_count():
                     lines = comicinfo_file.readlines()
 
                 # Folder number is extracted from the last two characters of the folder name
-                folder_number = folder[-2:]  # Get last two characters of folder name
-                if folder_number.startswith("0"):  # Remove leading zero if any
+                folder_number = folder[-2:]
+                if folder_number.startswith("0"):
                     folder_number = folder_number[1]
 
                 # Update the <Number> field with the folder number
@@ -341,36 +347,37 @@ def check_comicinfo_number_and_count():
                 with open(comicinfo_path, 'w') as comicinfo_file:
                     comicinfo_file.writelines(lines)
 
-                print(f"Updated <Number> and <Count> in ComicInfo.xml for folder: {folder}")
+                print(f"Updated <Number> and <Count> in ComicInfo.xml for '{folder}'")
             except Exception as e:
-                print(f"Error updating ComicInfo.xml for {folder}: {e}")
+                print(f"Error updating 'ComicInfo.xml' for {folder}: {e}")
         else:
-            print(f"ComicInfo.xml not found in folder {folder}. Skipping update.")
+            print(f"'ComicInfo.xml' not found in folder '{folder}'. Skipping update.")
 
 
 # Function to delete all "info.txt" files from subfolders
 def delete_info():
-    for root, dirs, files in os.walk(CWD):
+    for root, subfolder, files in os.walk(CWD):
         for file in files:
             if file == "info.txt":
                 try:
                     os.remove(os.path.join(root, file))
-                    print(f"Deleted {file} from {root}")
+                    folder_name = os.path.basename(root)
+                    print(f"Deleted '{file}' from '{folder_name}'")
                 except Exception as e:
                     print(f"Error deleting file {file}: {e}")
 
 
 # Function to zip each folder and rename the zip file to .cbz
 def zip_and_rename():
-    for dirs in os.listdir(CWD):
-        folder_path = os.path.join(CWD, dirs)
+    for subfolder in os.listdir(CWD):
+        folder_path = os.path.join(CWD, subfolder)
         if os.path.isdir(folder_path):
             zip_name = os.path.basename(folder_path)
             try:
                 zip_file = shutil.make_archive(zip_name, format='zip', root_dir=folder_path)
                 cbz_file = os.path.join(CWD, f"{zip_name}.cbz")
                 os.rename(zip_file, cbz_file)
-                print(f"Zipped and renamed: {zip_name} -> {cbz_file}")
+                print(f"Zipped and renamed: '{zip_name}' -> '{os.path.basename(cbz_file)}'")
             except Exception as e:
                 print(f"Error zipping and renaming {folder_path}: {e}")
 
