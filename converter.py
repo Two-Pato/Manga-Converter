@@ -3,6 +3,22 @@ import shutil
 
 CWD = os.getcwd()
 
+# Function to check if ComicInfo.xml already exists in all directories
+def check_comicinfo_exists():
+    comicinfo_files = []
+    
+    for root, dirs, files in os.walk(CWD):
+        for folder in dirs:
+            comicinfo_path = os.path.join(root, folder, "ComicInfo.xml")
+            if os.path.exists(comicinfo_path):
+                comicinfo_files.append(comicinfo_path)
+
+    if comicinfo_files:
+        print("ComicInfo.xml exists in the following directories:")
+        for file in comicinfo_files:
+            print(file)
+        return True
+    return False
 
 # Function to move files to a new folder if they're directly in the root
 def move_files_to_new_folder():
@@ -229,6 +245,45 @@ def delete_info():
                 except Exception as e:
                     print(f"Error deleting info.txt {file}: {e}")
 
+# Function to update ComicInfo.xml fields like <Number> and <Count>
+def update_comicinfo_number_and_count():
+    # Get all directories in the root directory
+    root_dirs = [d for d in os.listdir(CWD) if os.path.isdir(os.path.join(CWD, d))]
+
+    for root, dirs, files in os.walk(CWD):
+        for folder in dirs:
+            comicinfo_path = os.path.join(root, folder, "ComicInfo.xml")
+            if os.path.exists(comicinfo_path):
+                try:
+                    folder_path = os.path.join(CWD, folder)
+                    
+                    # Count directories in the root folder, not inside the current folder
+                    folder_count = len(root_dirs)
+
+                    # Read the ComicInfo.xml file
+                    with open(comicinfo_path, 'r') as comic_info_file:
+                        lines = comic_info_file.readlines()
+
+                    # Update <Number> and <Count> in ComicInfo.xml
+                    folder_number = ''.join(filter(str.isdigit, folder))[-2:]  # Get the last two digits of the folder name
+                    if folder_number.startswith("0"):
+                        folder_number = folder_number.lstrip("0")  # Remove leading zero
+
+                    for i, line in enumerate(lines):
+                        if "<Number>" in line:
+                            lines[i] = f"  <Number>{folder_number}</Number>\n"
+                        elif "<Count>" in line:
+                            lines[i] = f"  <Count>{folder_count}</Count>\n"
+
+                    # Save the updated ComicInfo.xml
+                    with open(comicinfo_path, 'w') as comic_info_file:
+                        comic_info_file.writelines(lines)
+
+                    print(f"Updated ComicInfo.xml in {comicinfo_path}")
+
+                except Exception as e:
+                    print(f"Error updating ComicInfo.xml in {comicinfo_path}: {e}")
+
 # Function to zip each folder and rename the zip file to .cbz
 def zip_and_rename():
     for sub_folder in os.listdir(CWD):
@@ -246,6 +301,7 @@ def zip_and_rename():
 
 # Main process function
 def process_manga():
+    check_comicinfo_exists()
     move_files_to_new_folder()
     create_folder()
     copy_comicinfo()
@@ -253,6 +309,7 @@ def process_manga():
     convert()
     rename()
     delete_info()
+    update_comicinfo_number_and_count()
     zip_and_rename()
 
 # Execute the manga processing
