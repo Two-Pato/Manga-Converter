@@ -3,22 +3,25 @@ import shutil
 
 CWD = os.getcwd()
 
-# Function to check if ComicInfo.xml already exists in all directories
+# Function to check if ComicInfo.xml exists in directories and mark folder states
 def check_comicinfo_exists():
-    comicinfo_files = []
+    folder_states = {}
     
+    # Traverse through directories
     for root, dirs, files in os.walk(CWD):
         for folder in dirs:
             comicinfo_path = os.path.join(root, folder, "ComicInfo.xml")
+            # Check if ComicInfo.xml exists
             if os.path.exists(comicinfo_path):
-                comicinfo_files.append(comicinfo_path)
-
-    if comicinfo_files:
-        print("ComicInfo.xml exists in the following directories:")
-        for file in comicinfo_files:
-            print(file)
-        return True
-    return False
+                folder_states[folder] = "Complete"
+            else:
+                folder_states[folder] = "Incomplete"
+    
+    # Print out the states of each folder
+    for folder, state in folder_states.items():
+        print(f"Folder: {folder} - Status: {state}")
+    
+    return folder_states
 
 # Function to move files to a new folder if they're directly in the root
 def move_files_to_new_folder():
