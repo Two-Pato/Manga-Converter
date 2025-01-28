@@ -132,10 +132,14 @@ def convert_images(directories_states):
                     subprocess.run(command, check=True)
                     print(f"Converted {ORANGE}'{image}'{RESET} to JPG and resized it.")
 
-                    # Remove the original file if it was PNG, AVIF, or WEBP
-                    if image.lower().endswith((".png", ".avif", ".webp")):
-                        os.remove(image)
-                        print(f"Removed original file: {ORANGE}'{image}'{RESET}")
+                    # Check if JPG was created and remove the original if needed
+                    image_path_new = os.path.splitext(image_path)[0] + '.jpg'
+                    if os.path.exists(image_path_new):
+                        if image.lower().endswith((".png", ".avif", ".webp")):
+                            os.remove(image_path)
+                            print(f"Removed original file: {ORANGE}'{image}'{RESET}")
+                    else:
+                        print(f"{RED}JPG conversion failed for '{image}'. Skipping removal.{RESET}")
 
                 except subprocess.CalledProcessError as e:
                     print(f"{RED}Error converting image '{image}': {e}{RESET}")
