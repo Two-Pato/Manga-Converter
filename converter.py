@@ -1,6 +1,7 @@
 import os
 import subprocess
 import shutil
+import re
 
 
 # Define ANSI escape codes for colors
@@ -101,7 +102,7 @@ def check_comicinfo():
                     print(f"{RED}Error copying file to '{os.path.basename(os.path.join(root, directory))}': {e}{RESET}")
             else:
                 print(f"Folder: {BLUE}'{directory}'{RESET} is complete, no need to copy ComicInfo.xml.")
-    
+
     return directories_states
 
 
@@ -115,7 +116,7 @@ def convert_images(directories_states):
         if directories_states.get(directory) == "Complete":
             print(f"Folder: {BLUE}'{directory}'{RESET} is complete. Skipping image conversion.")
             continue  # Skip this folder and move to the next
-            
+
         elif directories_states.get(directory) == "Incomplete":
             print(f"Folder: {BLUE}'{directory}'{RESET} is incomplete. Starting image conversion.")
 
@@ -273,7 +274,6 @@ def metadata():
 
                 # Update metadata in ComicInfo.xml
                 for i, line in enumerate(lines):
-                    # Update <Title> and <LocalizedSeries>
                     if "<Title>" in line:
                         lines[i] = f"  <Title>{metadata_dict.get('Original_Title', '')}</Title>\n"
                     elif "<LocalizedSeries>" in line:
@@ -281,20 +281,40 @@ def metadata():
                             lines[i] = "  <LocalizedSeries></LocalizedSeries>\n"  # Empty if both titles are the same
                         else:
                             lines[i] = f"  <LocalizedSeries>{metadata_dict.get('Title', '')}</LocalizedSeries>\n"
-                    # Update <Writer> (Artist)
                     elif "<Writer>" in line:
                         lines[i] = f"  <Writer>{metadata_dict.get('Artist', '')}</Writer>\n"
                     elif "<PageCount>" in line:
                         lines[i] = f"  <PageCount>{count_all}</PageCount>\n"
                     elif "<Tags>" in line:
-                        lines[i] = f"  <Tags>{metadata_dict.get('Tags', '')}</Tags>\n"      
+                        original_tags = metadata_dict.get("Tags", "")
+
+                        excluded_tags = {"digital", "rough grammar"}
+
+                        # Regex pattern to find tags like C12 or C345
+                        pattern = re.compile(r'^C\d{2,3}$', re.IGNORECASE)
+
+                        # Check if any tag matches the pattern
+                        tags_list = [tag.strip() for tag in original_tags.split(",")]
+                        if any(pattern.match(tag) for tag in tags_list):
+                            # If matched, add those tags to excluded_tags dynamically
+                            for tag in tags_list:
+                                if pattern.match(tag):
+                                    excluded_tags.add(tag.lower())  # Add the matched tag to exclude (case-insensitive)
+
+                        # Filter tags excluding those in excluded_tags
+                        filtered_tags = ", ".join(
+                            tag for tag in tags_list
+                            if tag.lower() not in excluded_tags
+                        )
+
+                        lines[i] = f"  <Tags>{filtered_tags}</Tags>\n"
 
                 # Write updated content back to ComicInfo.xml
                 with open(comicinfo_path, 'w') as comicinfo_file:
                     comicinfo_file.writelines(lines)
 
                 print(f"Updated 'ComicInfo.xml' for {BLUE}'{os.path.basename(root)}'{RESET}.")
-            
+
             except Exception as e:
                 print(f"{RED}Error processing 'ComicInfo.xml' for '{os.path.basename(root)}': {e}{RESET}")
         else:
