@@ -288,7 +288,7 @@ def metadata():
                     elif "<Tags>" in line:
                         original_tags = metadata_dict.get("Tags", "")
 
-                        excluded_tags = {"digital", "rough grammar"}
+                        excluded_tags = {"digital", "rough grammar", "rough translation"}
 
                         # Regex pattern to find tags like C12 or C345
                         pattern = re.compile(r'^C\d{2,3}$', re.IGNORECASE)
