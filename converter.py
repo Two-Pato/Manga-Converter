@@ -287,24 +287,24 @@ def metadata():
                         lines[i] = f"  <PageCount>{count_all}</PageCount>\n"
                     elif "<Tags>" in line:
                         original_tags = metadata_dict.get("Tags", "")
+                        if not original_tags:
+                            continue
 
                         excluded_tags = {"digital", "rough grammar", "rough translation"}
 
                         # Regex pattern to find tags like C12 or C345
-                        pattern = re.compile(r'^C\d{2,3}$', re.IGNORECASE)
+                        pattern = re.compile(r'^(C\d{2,3}|Comic.*)$', re.IGNORECASE)
 
                         # Check if any tag matches the pattern
                         tags_list = [tag.strip() for tag in original_tags.split(",")]
-                        if any(pattern.match(tag) for tag in tags_list):
-                            # If matched, add those tags to excluded_tags dynamically
-                            for tag in tags_list:
-                                if pattern.match(tag):
-                                    excluded_tags.add(tag.lower())  # Add the matched tag to exclude (case-insensitive)
+
+                        for tag in tags_list:
+                            if pattern.match(tag):
+                                excluded_tags.add(tag.lower())  # Add the matched tag to exclude (case-insensitive)
 
                         # Filter tags excluding those in excluded_tags
                         filtered_tags = ", ".join(
-                            tag for tag in tags_list
-                            if tag.lower() not in excluded_tags
+                            tag for tag in tags_list if tag.lower() not in excluded_tags
                         )
 
                         lines[i] = f"  <Tags>{filtered_tags}</Tags>\n"
