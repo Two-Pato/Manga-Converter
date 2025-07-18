@@ -44,14 +44,14 @@ def move_files_to_new_folder():
         print('No files found to move.')
         return
 
-    for file in files:
-        source = os.path.join(CWD, file)
-        destination = unique_destination(target_dir, file)
+    for f in files:
+        source = os.path.join(CWD, f)
+        destination = unique_destination(target_dir, f)
         try:
             shutil.move(source, destination)
-            print(f'Moved {ORANGE}\'{file}\'{RESET} to {GREEN}\'{os.path.basename(target_dir)}\'{RESET}')
+            print(f'Moved {ORANGE}\'{f}\'{RESET} to {GREEN}\'{os.path.basename(target_dir)}\'{RESET}')
         except Exception as e:
-            print(f'{BLUE}Error moving file \'{file}\': {e}{RESET}')
+            print(f'{BLUE}Error moving file \'{f}\': {e}{RESET}')
 
 
 def check_comicinfo():
@@ -67,9 +67,9 @@ def check_comicinfo():
         for root, dirs, _ in os.walk(base_dir):
             dirs.sort()
             for d in dirs:
-                folder_path = os.path.join(root, d)
-                comicinfo_path = os.path.join(folder_path, 'ComicInfo.xml')
-                info_txt_path = os.path.join(folder_path, 'info.txt')
+                dir_path = os.path.join(root, d)
+                comicinfo_path = os.path.join(dir_path, 'ComicInfo.xml')
+                info_txt_path = os.path.join(dir_path, 'info.txt')
 
                 comicinfo_exists = os.path.exists(comicinfo_path)
                 info_exists = os.path.exists(info_txt_path)
@@ -111,16 +111,16 @@ def convert_images(directories_states):
         if directories_states.get(d) != 'Incomplete':
             continue
 
-        folder_path = os.path.join(CWD, d)
+        dir_path = os.path.join(CWD, d)
         print(f'\nStarting image conversion in folder: {GREEN}\'{d}\'{RESET} (Status: {BLUE}Incomplete{RESET})')
 
-        files = sorted(f for f in os.listdir(folder_path) if os.path.isfile(os.path.join(folder_path, f)))
+        files = sorted(f for f in os.listdir(dir_path) if os.path.isfile(os.path.join(dir_path, f)))
 
         for image in files:
             if not image.lower().endswith(('.png', '.avif', '.jpg', '.webp')):
                 continue
 
-            image_path = os.path.join(folder_path, image)
+            image_path = os.path.join(dir_path, image)
             print(f'Processing image: {GREEN}{d}{RESET}/{ORANGE}{image}{RESET}')
 
             try:
@@ -155,13 +155,13 @@ def rename_images(directories_states):
         elif status == 'Incomplete':
             print(f'Folder: {GREEN}\'{d}\'{RESET} is {BLUE}incomplete{RESET}. Starting to rename images.')
 
-            folder_path = os.path.join(CWD, d)
-            files_jpg = sorted(f for f in os.listdir(folder_path) if f.lower().endswith('.jpg'))
+            dir_path = os.path.join(CWD, d)
+            files_jpg = sorted(f for f in os.listdir(dir_path) if f.lower().endswith('.jpg'))
 
             for i, image in enumerate(files_jpg, start=0):
-                old_path = os.path.join(folder_path, image)
+                old_path = os.path.join(dir_path, image)
                 new_name = f'{i:03d}.jpg'
-                new_path = os.path.join(folder_path, new_name)
+                new_path = os.path.join(dir_path, new_name)
 
                 if old_path != new_path:
                     try:
@@ -179,23 +179,23 @@ def metadata():
     dirs = sorted(d for d in os.listdir(CWD) if os.path.isdir(os.path.join(CWD, d)))
 
     print('Folder statuses for metadata update:')
-    folder_statuses = {}
+    dir_statuses = {}
 
     for d in dirs:
-        folder_path = os.path.join(CWD, d)
-        info_txt_path = os.path.join(folder_path, 'info.txt')
-        comicinfo_path = os.path.join(folder_path, 'ComicInfo.xml')
+        dir_path = os.path.join(CWD, d)
+        info_txt_path = os.path.join(dir_path, 'info.txt')
+        comicinfo_path = os.path.join(dir_path, 'ComicInfo.xml')
 
         has_info = os.path.exists(info_txt_path)
         has_comicinfo = os.path.exists(comicinfo_path)
 
         if not has_info and not has_comicinfo:
             print(f'{BLUE}Error: Both \'info.txt\' and \'ComicInfo.xml\' are missing in folder: \'{d}\'. Skipping metadata update.{RESET}')
-            folder_statuses[d] = 'Invalid'
+            dir_statuses[d] = 'Invalid'
             continue
 
         status = 'Incomplete' if has_info else 'Complete'
-        folder_statuses[d] = status
+        dir_statuses[d] = status
         status_color = RED if status == 'Complete' else BLUE
         print(f'Folder: {GREEN}\'{d}\'{RESET} - Status: {status_color}{status}{RESET}')
 
@@ -203,15 +203,15 @@ def metadata():
             print(f'  Skipping metadata update for {GREEN}\'{d}\'{RESET}.')
 
     for d in dirs:
-        if folder_statuses.get(d) != 'Incomplete':
+        if dir_statuses.get(d) != 'Incomplete':
             continue
 
-        folder_path = os.path.join(CWD, d)
-        comicinfo_path = os.path.join(folder_path, 'ComicInfo.xml')
-        info_path = os.path.join(folder_path, 'info.txt')
+        dir_path = os.path.join(CWD, d)
+        comicinfo_path = os.path.join(dir_path, 'ComicInfo.xml')
+        info_path = os.path.join(dir_path, 'info.txt')
 
-        count_all = sum(1 for f in os.listdir(folder_path)
-                        if os.path.isfile(os.path.join(folder_path, f)) and
+        count_all = sum(1 for f in os.listdir(dir_path)
+                        if os.path.isfile(os.path.join(dir_path, f)) and
                         not f.endswith(('.txt', '.xml')))
 
         metadata_dict = {}
@@ -276,7 +276,7 @@ def metadata():
 
 def rename_directories():
     info_path = None
-    for root, directories, files in os.walk(CWD):
+    for root, dirs, files in os.walk(CWD):
         if 'ComicInfo.xml' in files:
             info_path = os.path.join(root, 'ComicInfo.xml')
             break
@@ -298,10 +298,10 @@ def rename_directories():
             print(f'{BLUE}Error: \'<Title>\' not found in ComicInfo.xml.{RESET}')
             return
 
-        directories = [d for d in os.listdir(CWD) if os.path.isdir(os.path.join(CWD, d))]
-        directories.sort()
+        dirs = [d for d in os.listdir(CWD) if os.path.isdir(os.path.join(CWD, d))]
+        dirs.sort()
 
-        for i, directory in enumerate(directories, start=1):
+        for i, directory in enumerate(dirs, start=1):
             new_name = f'{manga_title} v{i:02d}'
             new_path = os.path.join(CWD, new_name)
             old_path = os.path.join(CWD, directory)
