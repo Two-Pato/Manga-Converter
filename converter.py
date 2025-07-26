@@ -275,45 +275,54 @@ def metadata():
 
 
 def rename_directories():
-    info_path = None
-    for root, dirs, files in os.walk(CWD):
-        if 'ComicInfo.xml' in files:
-            info_path = os.path.join(root, 'ComicInfo.xml')
-            break
+    dirs = sorted(d for d in os.listdir(CWD) if os.path.isdir(os.path.join(CWD, d)) and not d.startswith('.'))
 
-    if not info_path:
-        print(f'{BLUE}Error: \'ComicInfo.xml\' file not found in any folder.{RESET}')
+    if not dirs:
+        print(f'{BLUE}No subdirectories found to rename.{RESET}')
+        return
+
+    ref_dir = dirs[0]
+    ref_info_path = os.path.join(CWD, ref_dir, 'ComicInfo.xml')
+
+    if not os.path.exists(ref_info_path):
+        print(f'{RED}ComicInfo.xml not found in the first folder: \'{ref_dir}\'{RESET}')
         return
 
     manga_title = ''
     try:
-        with open(info_path, 'r') as info_file:
-            for line in info_file:
-                match = re.search(r'<Title>(.*?)</Title>', line)
-                if match:
-                    manga_title = match.group(1).strip()
-                    break
+        with open(ref_info_path, 'r', encoding='utf-8') as f:
+            content = f.read()
+            match = re.search(r'<Title>(.*?)</Title>', content)
+            if match:
+                manga_title = match.group(1).strip()
 
         if not manga_title:
-            print(f'{BLUE}Error: \'<Title>\' not found in ComicInfo.xml.{RESET}')
+            print(f'{BLUE}Error: <Title> tag not found in ComicInfo.xml of \'{ref_dir}\'.{RESET}')
             return
 
-        dirs = [d for d in os.listdir(CWD) if os.path.isdir(os.path.join(CWD, d))]
-        dirs.sort()
-
-        for i, directory in enumerate(dirs, start=1):
-            new_name = f'{manga_title} v{i:02d}'
-            new_path = os.path.join(CWD, new_name)
-            old_path = os.path.join(CWD, directory)
-
-            if not os.path.exists(new_path):
-                os.rename(old_path, new_path)
-                print(f'Renamed folder {GREEN}\'{directory}\'{RESET} to {GREEN}\'{new_name}\'{RESET}.')
-            else:
-                print(f'Folder: {GREEN}\'{new_name}\'{RESET} already exists. Skipping.')
-
     except Exception as e:
-        print(f'{BLUE}Error processing \'ComicInfo.xml\': {e}{RESET}')
+        print(f'{RED}Error reading ComicInfo.xml from \'{ref_dir}\': {e}{RESET}')
+        return
+
+    for i, directory in enumerate(dirs, start=1):
+        old_path = os.path.join(CWD, directory)
+        new_name = f'{manga_title} v{i:02d}'
+        new_path = os.path.join(CWD, new_name)
+
+        if old_path == new_path:
+            print(f'{GREEN}\'{directory}\'{RESET} already named correctly. Skipping.')
+            continue
+
+        if os.path.exists(new_path):
+            print(f'{RED}Target folder \'{new_name}\' already exists. Skipping rename of \'{directory}\'.{RESET}')
+            continue
+
+        try:
+            os.rename(old_path, new_path)
+            print(f'Renamed {GREEN}\'{directory}\'{RESET} to {GREEN}\'{new_name}\'{RESET}.')
+        except Exception as e:
+            print(f'{RED}Failed to rename \'{directory}\' to \'{new_name}\': {e}{RESET}')
+
 
 
 def update_comicinfo_number_and_count():
@@ -357,14 +366,20 @@ def synchronize_titles():
         print(f'{RED}ComicInfo.xml not found in \'{dirs[0]}\'. Cannot sync titles.{RESET}')
         return
 
-    ref_title = ''
-    ref_local = ''
-
     try:
         with open(ref_path, 'r', encoding='utf-8') as f:
             content = f.read()
-            ref_title = re.search(r'<Title>(.*?)</Title>', content).group(1).strip()
-            ref_local = re.search(r'<LocalizedSeries>(.*?)</LocalizedSeries>', content).group(1).strip()
+        
+        ref_title_match = re.search(r'<Title>(.*?)</Title>', content)
+        ref_local_match = re.search(r'<LocalizedSeries>(.*?)</LocalizedSeries>', content)
+
+        if not ref_title_match or not ref_local_match:
+            print(f'{RED}Missing required tags in reference ComicInfo.xml{RESET}')
+            return
+
+        ref_title = ref_title_match.group(1).strip()
+        ref_local = ref_local_match.group(1).strip()
+
     except Exception as e:
         print(f'{RED}Error reading ComicInfo.xml in \'{dirs[0]}\': {e}{RESET}')
         return
@@ -384,13 +399,33 @@ def synchronize_titles():
                 lines = f.readlines()
 
             modified = False
+            title_found = False
+            local_found = False
+
             for i, line in enumerate(lines):
-                if '<Title>' in line and ref_title not in line:
-                    lines[i] = f'  <Title>{ref_title}</Title>\n'
-                    modified = True
-                elif '<LocalizedSeries>' in line and ref_local not in line:
-                    lines[i] = f'  <LocalizedSeries>{ref_local}</LocalizedSeries>\n'
-                    modified = True
+                # Handle <Title>
+                title_match = re.match(r'^(\s*)<Title>(.*?)</Title>', line)
+                if title_match:
+                    title_found = True
+                    indent, current_title = title_match.groups()
+                    if current_title.strip() != ref_title:
+                        lines[i] = f'{indent}<Title>{ref_title}</Title>\n'
+                        modified = True
+                    continue
+
+                # Handle <LocalizedSeries>
+                local_match = re.match(r'^(\s*)<LocalizedSeries>(.*?)</LocalizedSeries>', line)
+                if local_match:
+                    local_found = True
+                    indent, current_local = local_match.groups()
+                    if current_local.strip() != ref_local:
+                        lines[i] = f'{indent}<LocalizedSeries>{ref_local}</LocalizedSeries>\n'
+                        modified = True
+                    continue
+
+            if not title_found or not local_found:
+                print(f'{BLUE}\'{d}\' is missing <Title> or <LocalizedSeries>. Skipping.{RESET}')
+                continue
 
             if modified:
                 with open(path, 'w', encoding='utf-8') as f:
