@@ -1,478 +1,394 @@
-import os
-import subprocess
+#!/usr/bin/env python3
+import logging
 import shutil
+import subprocess
 import re
+from pathlib import Path
+from lxml import etree as ET
 
-# ANSI escape codes for colors
+# ANSI escape codes
+GREEN = '\033[32m'
 BLUE = '\033[34m'
 ORANGE = '\033[38;5;214m'
 YELLOW = '\033[33m'
-GREEN = '\033[32m'
 RED = '\033[31m'
 RESET = '\033[0m'
 
-CWD = os.getcwd()
+SCRIPT_DIR = Path(__file__).parent
+DATA_DIR = SCRIPT_DIR / "data"
+CWD = Path.cwd()
+
+logging.basicConfig(level=logging.INFO, format="%(message)s")
+logger = logging.getLogger(__name__)
 
 
 def move_files_to_new_folder():
-    def get_or_create_target_directory():
-        dirs = sorted([d for d in os.listdir(CWD) if os.path.isdir(os.path.join(CWD, d))])
-        if dirs:
-            print(f'At least one folder exists. Skipping folder creation. Existing folders:')
-            for d in dirs:
-                print(f'- {GREEN}{d}{RESET}')
-            return os.path.join(CWD, dirs[0])
+    def check_cbz_files():
+        cbz_files = sorted([f for f in CWD.iterdir() if f.is_file() and f.suffix.lower() == ".cbz"],
+                           key=lambda x: x.name.lower())
+        if cbz_files:
+            logger.info(f"Found {len(cbz_files)} .cbz file(s) in {GREEN}{CWD.name}{RESET}:")
+            for f in cbz_files:
+                logger.info(f" - {BLUE}{f.name}{RESET}")
         else:
-            new_dir = os.path.join(CWD, 'temp')
-            os.makedirs(new_dir)
-            print(f'Created new folder: {GREEN}\'temp\'{RESET} in {GREEN}\'{os.path.basename(CWD)}\'{RESET}')
-            return new_dir
+            logger.info(f"No .cbz files found in {GREEN}{CWD.name}{RESET}.")
+        return cbz_files
 
-    def unique_destination(path, name):
-        base, ext = os.path.splitext(name)
-        counter = 1
-        new_path = os.path.join(path, name)
-        while os.path.exists(new_path):
-            new_path = os.path.join(path, f'{base}_{counter}{ext}')
-            counter += 1
-        return new_path
+    def unpack_cbz_files(cbz_files):
+        for f in cbz_files:
+            extract_dir = CWD / f.stem
+            extract_dir.mkdir(exist_ok=True)
+            try:
+                shutil.unpack_archive(str(f), str(extract_dir), format="zip")
+                logger.info(f"Extracted {BLUE}{f.name}{RESET} -> {GREEN}{extract_dir.name}{RESET}")
+                f.unlink()
+                logger.info(f"Deleted {BLUE}{f.name}{RESET}")
+            except (shutil.ReadError, ValueError):
+                logger.error(f"{ORANGE}Failed to extract {f.name}{RESET}")
+                continue
+
+    def get_or_create_target_directory(default_target="temp"):
+        dirs = sorted([d for d in CWD.iterdir() if d.is_dir()], key=lambda x: x.name.lower())
+        if dirs:
+            logger.info(f"Existing directories in {GREEN}{CWD.name}{RESET}:")
+            for d in dirs:
+                logger.info(f" - {GREEN}{d.name}{RESET}")
+            target_dir = CWD / default_target
+        else:
+            target_dir = CWD / default_target
+            if not target_dir.exists():
+                target_dir.mkdir()
+                logger.info(f"Created directory {GREEN}{target_dir.name}{RESET}")
+        return target_dir
+
+    def move_remaining_files(target_dir):
+        files_to_move = sorted([f for f in CWD.iterdir() if f.is_file() and f.suffix.lower() != ".cbz"],
+                               key=lambda x: x.name.lower())
+        if not files_to_move:
+            logger.info(f"{ORANGE}No files to move to {target_dir.name}{RESET}")
+            return
+        for f in files_to_move:
+            dest = target_dir / f.name
+            shutil.move(str(f), str(dest))
+            logger.info(f"Moved {BLUE}{f.name}{RESET} -> {GREEN}{target_dir.name}{RESET}")
+
+    cbz_files = check_cbz_files()
+    if cbz_files:
+        unpack_cbz_files(cbz_files)
 
     target_dir = get_or_create_target_directory()
-    files = sorted(f for f in os.listdir(CWD) if os.path.isfile(os.path.join(CWD, f)))
-
-    if not files:
-        print('No files found to move.')
-        return
-
-    for f in files:
-        source = os.path.join(CWD, f)
-        destination = unique_destination(target_dir, f)
-        try:
-            shutil.move(source, destination)
-            print(f'Moved {ORANGE}\'{f}\'{RESET} to {GREEN}\'{os.path.basename(target_dir)}\'{RESET}')
-        except Exception as e:
-            print(f'{BLUE}Error moving file \'{f}\': {e}{RESET}')
+    move_remaining_files(target_dir)
 
 
-def check_comicinfo():
-    def get_comicinfo_template():
-        comicinfo_source_path = os.path.join(os.path.dirname(os.path.realpath(__file__)), 'data', 'ComicInfo.xml')
-        if not os.path.exists(comicinfo_source_path):
-            print(f'{BLUE}ComicInfo.xml not found in the \'data\' directory.{RESET}')
-            return None
-        return comicinfo_source_path
-
-    def analyze_directory(base_dir, template_path):
-        states = {}
-        for root, dirs, _ in os.walk(base_dir):
-            dirs.sort()
-            for d in dirs:
-                dir_path = os.path.join(root, d)
-                comicinfo_path = os.path.join(dir_path, 'ComicInfo.xml')
-                info_txt_path = os.path.join(dir_path, 'info.txt')
-
-                comicinfo_exists = os.path.exists(comicinfo_path)
-                info_exists = os.path.exists(info_txt_path)
-                status = 'Complete' if comicinfo_exists else 'Incomplete'
-
-                states[d] = status
-
-                status_color = RED if status == 'Complete' else BLUE
-                info_color = RED if info_exists else BLUE
-                print(f'Folder: {GREEN}\'{d}\'{RESET} - Status: {status_color}{status}{RESET} - info.txt: {info_color}{"Found" if info_exists else "Not Found"}{RESET}')
-
-                if not comicinfo_exists and template_path:
-                    try:
-                        shutil.copy(template_path, comicinfo_path)
-                        print(f'{GREEN}\'{d}\'{RESET} was {BLUE}incomplete{RESET}. Copied {ORANGE}\'ComicInfo.xml\'{RESET}.')
-                    except Exception as e:
-                        print(f'{BLUE}Error copying ComicInfo.xml to \'{d}\': {e}{RESET}')
-                else:
-                    print(f'  No action needed for {GREEN}\'{d}\'{RESET}.')
-        return states
-
-    comicinfo_template = get_comicinfo_template()
-    if not comicinfo_template:
-        return {}
-
-    return analyze_directory(CWD, comicinfo_template)
-
-
-def convert_images(directories_states):
-    dirs = sorted(d for d in directories_states.keys() if os.path.isdir(os.path.join(CWD, d)))
-
-    print('Folder statuses:')
+def convert_images(dirs):
+    image_extensions = {".jpg", ".jpeg", ".png", ".webp", ".tif", ".tiff", ".avif", ".gif"}
     for d in dirs:
-        status = directories_states.get(d, 'Unknown')
-        status_color = RED if status == 'Complete' else BLUE
-        print(f'Folder: {GREEN}\'{d}\'{RESET} - Status: {status_color}{status}{RESET}')
-
-    for d in dirs:
-        if directories_states.get(d) != 'Incomplete':
-            continue
-
-        dir_path = os.path.join(CWD, d)
-        print(f'\nStarting image conversion in folder: {GREEN}\'{d}\'{RESET} (Status: {BLUE}Incomplete{RESET})')
-
-        files = sorted(f for f in os.listdir(dir_path) if os.path.isfile(os.path.join(dir_path, f)))
-
-        for image in files:
-            if not image.lower().endswith(('.png', '.avif', '.jpg', '.webp')):
-                continue
-
-            image_path = os.path.join(dir_path, image)
-            print(f'Processing image: {GREEN}{d}{RESET}/{ORANGE}{image}{RESET}')
-
+        images = sorted([i for i in d.iterdir() if i.is_file() and i.suffix.lower() in image_extensions],
+                        key=lambda x: x.name.lower())
+        for i in images:
+            command = [
+                "magick", "mogrify",
+                "-format", "jpg",
+                "-quality", "100",
+                "-resize", "x2500",
+                str(i)
+            ]
             try:
-                command = ['magick', 'mogrify', '-format', 'jpg', '-quality', '100', '-resize', 'x2500', image_path]
                 subprocess.run(command, check=True)
-
-                print(f'Converted {ORANGE}\'{image}\'{RESET} to JPG and resized it.')
-
-                image_path_new = os.path.splitext(image_path)[0] + '.jpg'
-                if os.path.exists(image_path_new):
-                    if image.lower().endswith(('.png', '.avif', '.webp')):
-                        os.remove(image_path)
-                        print(f'Removed original file: {ORANGE}\'{image}\'{RESET}')
-                else:
-                    print(f'{BLUE}JPG conversion failed for {ORANGE}\'{image}\'{RESET}. Original file kept.{RESET}')
-
-            except subprocess.CalledProcessError as e:
-                print(f'{BLUE}Error converting image {ORANGE}\'{image}\'{RESET}: {e}{RESET}')
+                logger.info(f"Processed {BLUE}{i.name}{RESET} in {GREEN}{d.name}{RESET}")
             except Exception as e:
-                print(f'{BLUE}Unexpected error processing file {ORANGE}\'{image}\'{RESET}: {e}{RESET}')
+                logger.error(f"{ORANGE}Failed to process {i.name} in {GREEN}{d.name}{RESET}: {e}{RESET}")
 
 
-def rename_images(directories_states):
-    dirs = sorted(d for d in directories_states.keys() if os.path.isdir(os.path.join(CWD, d)))
-
-    print('Starting image renaming process:')
+def rename_images(dirs):
     for d in dirs:
-        status = directories_states.get(d)
-        if status == 'Complete':
-            print(f'Folder: {GREEN}\'{d}\'{RESET} is {RED}complete{RESET}. Skipping renaming images.')
-            continue
-        elif status == 'Incomplete':
-            print(f'Folder: {GREEN}\'{d}\'{RESET} is {BLUE}incomplete{RESET}. Starting to rename images.')
-
-            dir_path = os.path.join(CWD, d)
-            files_jpg = sorted(f for f in os.listdir(dir_path) if f.lower().endswith('.jpg'))
-
-            for i, image in enumerate(files_jpg, start=0):
-                old_path = os.path.join(dir_path, image)
-                new_name = f'{i:03d}.jpg'
-                new_path = os.path.join(dir_path, new_name)
-
-                if old_path != new_path:
-                    try:
-                        os.rename(old_path, new_path)
-                        print(f'Renamed: {GREEN}{os.path.relpath(os.path.dirname(old_path), CWD)}{RESET}/'
-                              f'{ORANGE}{os.path.basename(old_path)}{RESET} -> '
-                              f'{GREEN}{os.path.relpath(os.path.dirname(new_path), CWD)}{RESET}/'
-                              f'{ORANGE}{os.path.basename(new_path)}{RESET}')
-                    except Exception as e:
-                        print(f'{BLUE}Error renaming file {GREEN}{os.path.relpath(os.path.dirname(old_path), CWD)}{RESET}/'
-                              f'{ORANGE}{os.path.basename(old_path)}{RESET}: {e}{RESET}')
+        images = sorted([f for f in d.iterdir() if f.is_file() and f.suffix.lower() == ".jpg"], key=lambda x: x.name.lower())
+        for idx, f in enumerate(images, start=0):
+            new_name = f"{idx:03}.jpg"
+            new_path = d / new_name
+            if f.name != new_name:
+                try:
+                    f.rename(new_path)
+                    logger.info(f"Renamed {BLUE}{f.name}{RESET} -> {BLUE}{new_name}{RESET}")
+                except Exception as e:
+                    logger.error(f"{ORANGE}Failed to rename {f.name} in {GREEN}{d.name}{RESET}: {e}{RESET}")
 
 
-def metadata():
-    dirs = sorted(d for d in os.listdir(CWD) if os.path.isdir(os.path.join(CWD, d)))
-
-    print('Folder statuses for metadata update:')
-    dir_statuses = {}
-
-    for d in dirs:
-        dir_path = os.path.join(CWD, d)
-        info_txt_path = os.path.join(dir_path, 'info.txt')
-        comicinfo_path = os.path.join(dir_path, 'ComicInfo.xml')
-
-        has_info = os.path.exists(info_txt_path)
-        has_comicinfo = os.path.exists(comicinfo_path)
-
-        if not has_info and not has_comicinfo:
-            print(f'{BLUE}Error: Both \'info.txt\' and \'ComicInfo.xml\' are missing in folder: \'{d}\'. Skipping metadata update.{RESET}')
-            dir_statuses[d] = 'Invalid'
-            continue
-
-        status = 'Incomplete' if has_info else 'Complete'
-        dir_statuses[d] = status
-        status_color = RED if status == 'Complete' else BLUE
-        print(f'Folder: {GREEN}\'{d}\'{RESET} - Status: {status_color}{status}{RESET}')
-
-        if status == 'Complete':
-            print(f'  Skipping metadata update for {GREEN}\'{d}\'{RESET}.')
-
-    for d in dirs:
-        if dir_statuses.get(d) != 'Incomplete':
-            continue
-
-        dir_path = os.path.join(CWD, d)
-        comicinfo_path = os.path.join(dir_path, 'ComicInfo.xml')
-        info_path = os.path.join(dir_path, 'info.txt')
-
-        count_all = sum(1 for f in os.listdir(dir_path)
-                        if os.path.isfile(os.path.join(dir_path, f)) and
-                        not f.endswith(('.txt', '.xml')))
-
-        metadata_dict = {}
-        try:
-            with open(info_path, 'r') as info_file:
-                for line in info_file:
-                    if 'ORIGINAL TITLE:' in line:
-                        metadata_dict['Original_Title'] = line.split('ORIGINAL TITLE: ', 1)[-1].strip()
-                    elif 'TITLE:' in line:
-                        metadata_dict['Title'] = line.split('TITLE: ', 1)[-1].strip()
-                    elif 'ARTIST:' in line:
-                        metadata_dict['Artist'] = line.split('ARTIST: ', 1)[-1].strip()
-                    elif 'TAGS:' in line:
-                        metadata_dict['Tags'] = line.split('TAGS: ', 1)[-1].strip()
-        except Exception as e:
-            print(f'{BLUE}Error reading \'info.txt\' for \'{d}\': {e}{RESET}')
-            continue
-
-        if os.path.exists(comicinfo_path):
-            try:
-                with open(comicinfo_path, 'r') as comicinfo_file:
-                    lines = comicinfo_file.readlines()
-
-                for i, line in enumerate(lines):
-                    if '<Title>' in line:
-                        lines[i] = f'  <Title>{metadata_dict.get("Original_Title", "")}</Title>\n'
-                    elif '<LocalizedSeries>' in line:
-                        if metadata_dict.get('Original_Title') == metadata_dict.get('Title'):
-                            lines[i] = '  <LocalizedSeries></LocalizedSeries>\n'
-                        else:
-                            lines[i] = f'  <LocalizedSeries>{metadata_dict.get("Title", "")}</LocalizedSeries>\n'
-                    elif '<Writer>' in line:
-                        lines[i] = f'  <Writer>{metadata_dict.get("Artist", "")}</Writer>\n'
-                    elif '<PageCount>' in line:
-                        lines[i] = f'  <PageCount>{count_all}</PageCount>\n'
-                    elif '<Tags>' in line:
-                        original_tags = metadata_dict.get('Tags', '')
-                        if not original_tags:
-                            continue
-
-                        excluded_tags = {'digital', 'rough grammar', 'rough translation'}
-                        pattern = re.compile(r'^(C\d{2,3}|Comic.*)$', re.IGNORECASE)
-                        tags_list = [tag.strip() for tag in original_tags.split(',')]
-
-                        for tag in tags_list:
-                            if pattern.match(tag):
-                                excluded_tags.add(tag.lower())
-
-                        filtered_tags = ', '.join(tag for tag in tags_list if tag.lower() not in excluded_tags)
-                        lines[i] = f'  <Tags>{filtered_tags}</Tags>\n'
-
-                with open(comicinfo_path, 'w') as comicinfo_file:
-                    comicinfo_file.writelines(lines)
-
-                print(f'Updated metadata in {ORANGE}\'ComicInfo.xml\'{RESET} for {GREEN}\'{d}\'{RESET}.')
-
-            except Exception as e:
-                print(f'{BLUE}Error processing \'ComicInfo.xml\' for \'{d}\': {e}{RESET}')
-        else:
-            print(f'{BLUE}Error: \'ComicInfo.xml\' not found in folder \'{d}\'. Skipping update.{RESET}')
+def read_info_txt(info_txt_file: Path):
+    info_data = {}
+    if not info_txt_file.exists():
+        logger.warning(f"{ORANGE}No info.txt found in {info_txt_file.parent}{RESET}")
+        return info_data
+    with info_txt_file.open("r", encoding="utf-8") as f:
+        for line in f:
+            if ":" in line:
+                key, value = line.split(":", 1)
+                info_data[key.strip().upper()] = value.strip()
+    return info_data
 
 
-def rename_directories():
-    dirs = sorted(d for d in os.listdir(CWD) if os.path.isdir(os.path.join(CWD, d)) and not d.startswith('.'))
-
-    if not dirs:
-        print(f'{BLUE}No subdirectories found to rename.{RESET}')
-        return
-
-    ref_dir = dirs[0]
-    ref_info_path = os.path.join(CWD, ref_dir, 'ComicInfo.xml')
-
-    if not os.path.exists(ref_info_path):
-        print(f'{RED}ComicInfo.xml not found in the first folder: \'{ref_dir}\'{RESET}')
-        return
-
-    manga_title = ''
-    try:
-        with open(ref_info_path, 'r', encoding='utf-8') as f:
-            content = f.read()
-            match = re.search(r'<Title>(.*?)</Title>', content)
-            if match:
-                manga_title = match.group(1).strip()
-
-        if not manga_title:
-            print(f'{BLUE}Error: <Title> tag not found in ComicInfo.xml of \'{ref_dir}\'.{RESET}')
-            return
-
-    except Exception as e:
-        print(f'{RED}Error reading ComicInfo.xml from \'{ref_dir}\': {e}{RESET}')
-        return
-
-    for i, directory in enumerate(dirs, start=1):
-        old_path = os.path.join(CWD, directory)
-        new_name = f'{manga_title} v{i:02d}'
-        new_path = os.path.join(CWD, new_name)
-
-        if old_path == new_path:
-            print(f'{GREEN}\'{directory}\'{RESET} already named correctly. Skipping.')
-            continue
-
-        if os.path.exists(new_path):
-            print(f'{RED}Target folder \'{new_name}\' already exists. Skipping rename of \'{directory}\'.{RESET}')
-            continue
-
-        try:
-            os.rename(old_path, new_path)
-            print(f'Renamed {GREEN}\'{directory}\'{RESET} to {GREEN}\'{new_name}\'{RESET}.')
-        except Exception as e:
-            print(f'{RED}Failed to rename \'{directory}\' to \'{new_name}\': {e}{RESET}')
+def load_excluded_tags():
+    excluded_file = DATA_DIR / "excluded_tags.txt"
+    if not excluded_file.exists():
+        return set()
+    excluded = set()
+    with excluded_file.open("r", encoding="utf-8") as f:
+        for line in f:
+            tag = line.strip().lower()
+            if tag:
+                excluded.add(tag)
+    return excluded
 
 
+def write_xml_with_tags_whitespace(tree, out_path, expand_tags=None):
+    if expand_tags is None:
+        expand_tags = ["LocalizedSeries"]
 
-def update_comicinfo_number_and_count():
-    dirs = sorted(d for d in os.listdir(CWD) if os.path.isdir(os.path.join(CWD, d)))
-    total_count = len(dirs)
+    tree.write(str(out_path), encoding="utf-8", xml_declaration=True, pretty_print=True)
 
-    for index, d in enumerate(dirs, start=1):
-        path = os.path.join(CWD, d)
-        comicinfo = os.path.join(path, 'ComicInfo.xml')
+    with open(out_path, "r", encoding="utf-8") as f:
+        xml_text = f.read()
 
-        if os.path.exists(comicinfo):
-            try:
-                with open(comicinfo, 'r') as f:
-                    lines = f.readlines()
+    xml_text = re.sub(
+        r"<\?xml version=['\"]1\.0['\"] encoding=['\"]UTF-8['\"]\s*\?>",
+        '<?xml version="1.0" encoding="utf-8"?>',
+        xml_text,
+        count=1
+    )
 
-                for i, line in enumerate(lines):
-                    if '<Number>' in line:
-                        lines[i] = f'  <Number>{index}</Number>\n'
-                    elif '<Count>' in line:
-                        lines[i] = f'  <Count>{total_count}</Count>\n'
+    for tag in expand_tags:
+        xml_text = re.sub(
+            rf'(\n\s*)<({tag})\s*/\s*>',
+            rf'\1<\2></\2>',
+            xml_text
+        )
+        xml_text = re.sub(
+            rf'<({tag})\s*/\s*>',
+            rf'<\1></\1>',
+            xml_text
+        )
 
-                with open(comicinfo, 'w') as f:
-                    f.writelines(lines)
+    xml_text = re.sub(
+        r'\n\s*(<Tags>.*?</Tags>)\s*\n',
+        r'\n\n  \1\n\n',
+        xml_text,
+        flags=re.DOTALL
+    )
 
-                print(f'Updated <Number> and <Count> in {ORANGE}\'ComicInfo.xml\'{RESET} for {GREEN}\'{d}\'{RESET}')
-            except Exception as e:
-                print(f'{RED}Error updating \'ComicInfo.xml\' for \'{d}\': {e}{RESET}')
-        else:
-            print(f'{ORANGE}\'ComicInfo.xml\'{RESET} not found in folder {GREEN}\'{d}\'{RESET}. Skipping update.')
+    xml_text = re.sub(r'\n{3,}', r'\n\n', xml_text)
+
+    with open(out_path, "w", encoding="utf-8") as f:
+        f.write(xml_text)
 
 
-def synchronize_titles():
-    dirs = sorted(d for d in os.listdir(CWD) if os.path.isdir(os.path.join(CWD, d)))
+def update_comicinfo_metadata(comicinfo_file: Path, info_data: dict, number: int, count: int, page_count: int):
+    parser = ET.XMLParser(remove_blank_text=True)
+    tree = ET.parse(str(comicinfo_file), parser)
+    root = tree.getroot()
 
-    if len(dirs) < 2:
-        print(f'Only one folder found. No synchronization needed.{RESET}')
-        return
+    excluded_tags = load_excluded_tags()
+    exclude_pattern = re.compile(r'^(C\d{2,3}|Comic.*)$', re.IGNORECASE)
 
-    ref_path = os.path.join(CWD, dirs[0], 'ComicInfo.xml')
-    if not os.path.exists(ref_path):
-        print(f'{RED}ComicInfo.xml not found in \'{dirs[0]}\'. Cannot sync titles.{RESET}')
-        return
+    if info_data:
+        original_tags = info_data.get("TAGS", "")
+        filtered_tags = []
 
-    try:
-        with open(ref_path, 'r', encoding='utf-8') as f:
-            content = f.read()
-        
-        ref_title_match = re.search(r'<Title>(.*?)</Title>', content)
-        ref_local_match = re.search(r'<LocalizedSeries>(.*?)</LocalizedSeries>', content)
-
-        if not ref_title_match or not ref_local_match:
-            print(f'{RED}Missing required tags in reference ComicInfo.xml{RESET}')
-            return
-
-        ref_title = ref_title_match.group(1).strip()
-        ref_local = ref_local_match.group(1).strip()
-
-    except Exception as e:
-        print(f'{RED}Error reading ComicInfo.xml in \'{dirs[0]}\': {e}{RESET}')
-        return
-
-    print(f'Using reference Title: {ref_title}{RESET}')
-    print(f'Using reference LocalizedSeries: {ref_local}{RESET}')
-
-    for d in dirs[1:]:
-        path = os.path.join(CWD, d, 'ComicInfo.xml')
-
-        if not os.path.exists(path):
-            print(f'ComicInfo.xml not found in {GREEN}\'{d}\'{RESET}. Skipping.')
-            continue
-
-        try:
-            with open(path, 'r', encoding='utf-8') as f:
-                lines = f.readlines()
-
-            modified = False
-            title_found = False
-            local_found = False
-
-            for i, line in enumerate(lines):
-                # Handle <Title>
-                title_match = re.match(r'^(\s*)<Title>(.*?)</Title>', line)
-                if title_match:
-                    title_found = True
-                    indent, current_title = title_match.groups()
-                    if current_title.strip() != ref_title:
-                        lines[i] = f'{indent}<Title>{ref_title}</Title>\n'
-                        modified = True
+        if original_tags:
+            for tag in original_tags.split(","):
+                cleaned = tag.strip()
+                lower = cleaned.lower()
+                if lower in excluded_tags or exclude_pattern.match(cleaned):
                     continue
+                filtered_tags.append(cleaned)
 
-                # Handle <LocalizedSeries>
-                local_match = re.match(r'^(\s*)<LocalizedSeries>(.*?)</LocalizedSeries>', line)
-                if local_match:
-                    local_found = True
-                    indent, current_local = local_match.groups()
-                    if current_local.strip() != ref_local:
-                        lines[i] = f'{indent}<LocalizedSeries>{ref_local}</LocalizedSeries>\n'
-                        modified = True
-                    continue
+        # Map fields from info.txt into ComicInfo elements
+        fields = {
+            "Title": info_data.get("ORIGINAL TITLE", ""),
+            "LocalizedSeries": info_data.get("TITLE", ""),
+            "Writer": info_data.get("ARTIST", ""),
+            "Tags": ", ".join(filtered_tags)
+        }
 
-            if not title_found or not local_found:
-                print(f'{BLUE}\'{d}\' is missing <Title> or <LocalizedSeries>. Skipping.{RESET}')
+        for tag_name, value in fields.items():
+            elem = root.find(tag_name)
+            if elem is None:
+                elem = ET.SubElement(root, tag_name)
+            # ensure explicit empty string for empty elements (not None)
+            elem.text = value if value is not None else ""
+
+    counts_fields = {
+        "Number": str(number),
+        "Count": str(count),
+        "PageCount": str(page_count)
+    }
+
+    for tag_name, value in counts_fields.items():
+        elem = root.find(tag_name)
+        if elem is None:
+            elem = ET.SubElement(root, tag_name)
+        elem.text = value
+
+    # Write using our specialized writer that preserves empty-tag form and Tag whitespace
+    write_xml_with_tags_whitespace(tree, str(comicinfo_file), expand_tags=["LocalizedSeries"])
+
+
+def process_comicinfo():
+    dirs = sorted([d for d in CWD.iterdir() if d.is_dir()], key=lambda x: x.name.lower())
+    total_dirs = len(dirs)
+    default_comicinfo = DATA_DIR / "ComicInfo.xml"
+
+    if not default_comicinfo.exists():
+        logger.error(f"{ORANGE}Default ComicInfo.xml missing in {DATA_DIR}{RESET}")
+        return
+
+    for idx, d in enumerate(dirs, start=1):
+        info_txt_file = d / "info.txt"
+        comicinfo_file = d / "ComicInfo.xml"
+
+        if not comicinfo_file.exists():
+            shutil.copy(default_comicinfo, comicinfo_file)
+            logger.info(f"Copied default {BLUE}ComicInfo.xml{RESET} to {GREEN}{d.name}{RESET}")
+
+        page_count = len([f for f in d.iterdir() if f.is_file() and f.suffix.lower() == ".jpg"])
+        info_data = read_info_txt(info_txt_file)
+        update_comicinfo_metadata(comicinfo_file, info_data, number=idx, count=total_dirs, page_count=page_count)
+
+
+def synchronize_titles_and_clear_duplicates():
+    dirs = sorted([d for d in CWD.iterdir() if d.is_dir()], key=lambda x: x.name.lower())
+    first_title = ""
+    first_localized = ""
+    first_dir = None
+
+    for d in dirs:
+        comicinfo_file = d / "ComicInfo.xml"
+        if not comicinfo_file.exists():
+            continue
+        try:
+            tree = ET.parse(str(comicinfo_file))
+            root = tree.getroot()
+            number_elem = root.find("Number")
+            if number_elem is not None and (number_elem.text or "").strip() == "1":
+                first_dir = d
+                title_elem = root.find("Title")
+                localized_elem = root.find("LocalizedSeries")
+                first_title = (title_elem.text or "").strip() if title_elem is not None else ""
+                first_localized = (localized_elem.text or "").strip() if localized_elem is not None else ""
+                break
+        except ET.XMLSyntaxError:
+            continue
+
+    if not first_dir:
+        logger.warning(f"{ORANGE}No directory with Number=1 found, skipping title synchronization{RESET}")
+        return
+
+    for d in dirs:
+        comicinfo_file = d / "ComicInfo.xml"
+        if not comicinfo_file.exists():
+            continue
+        try:
+            tree = ET.parse(str(comicinfo_file))
+            root = tree.getroot()
+
+            for tag_name, value in [("Title", first_title), ("LocalizedSeries", first_localized)]:
+                elem = root.find(tag_name)
+                if elem is None:
+                    elem = ET.SubElement(root, tag_name)
+                # ensure explicit empty string when value is empty
+                elem.text = value if value is not None else ""
+
+                if (elem.text or "").strip() != (value or "").strip():
+                    logger.info(f"Updated {tag_name} in {GREEN}{d.name}{RESET} -> {BLUE}{value}{RESET}")
+
+            # If Title and LocalizedSeries are the same, clear LocalizedSeries explicitly to empty string
+            title_elem = root.find("Title")
+            localized_elem = root.find("LocalizedSeries")
+            if title_elem is not None and localized_elem is not None:
+                title_text = (title_elem.text or "").strip()
+                localized_text = (localized_elem.text or "").strip()
+                if title_text and title_text.lower() == localized_text.lower():
+                    localized_elem.text = ""  # explicit empty string to avoid self-closing
+                    logger.info(f"Cleared duplicate LocalizedSeries for {GREEN}{d.name}{RESET} (was '{RED}{localized_text}{RESET}')")
+
+            # Write back with our writer to preserve empty element form and whitespace
+            write_xml_with_tags_whitespace(tree, str(comicinfo_file), expand_tags=["LocalizedSeries"])
+
+        except ET.XMLSyntaxError as e:
+            logger.error(f"{ORANGE}Failed to parse ComicInfo.xml in {d.name}: {e}{RESET}")
+
+
+def rename_dirs_from_comicinfo():
+    dirs = sorted([d for d in CWD.iterdir() if d.is_dir()], key=lambda x: x.name.lower())
+
+    for d in dirs:
+        comicinfo_file = d / "ComicInfo.xml"
+        if not comicinfo_file.exists():
+            logger.warning(f"{ORANGE}ComicInfo.xml missing in {d.name}, skipping rename{RESET}")
+            continue
+
+        try:
+            tree = ET.parse(str(comicinfo_file))
+            root = tree.getroot()
+            title_elem = root.find("Title")
+            number_elem = root.find("Number")
+
+            if title_elem is None or number_elem is None:
+                logger.warning(f"{ORANGE}Title or Number missing in {d.name}, skipping rename{RESET}")
                 continue
 
-            if modified:
-                with open(path, 'w', encoding='utf-8') as f:
-                    f.writelines(lines)
-                print(f'{GREEN}\'{d}\'{RESET}: Titles synchronized.')
-            else:
-                print(f'{GREEN}\'{d}\'{RESET}: Titles already match. No changes needed.')
+            number = int(number_elem.text.strip())
+            number_str = f"{number:02}"
+            new_dir_name = f"{title_elem.text.strip()} v{number_str}"
+            new_dir_path = CWD / new_dir_name
 
+            if d.name != new_dir_name:
+                d.rename(new_dir_path)
+                logger.info(f"Renamed directory {GREEN}{d.name}{RESET} -> {GREEN}{new_dir_name}{RESET}")
+
+        except ET.XMLSyntaxError as e:
+            logger.error(f"{ORANGE}Failed to parse {BLUE}ComicInfo.xml{RESET} in {d.name}: {e}{RESET}")
         except Exception as e:
-            print(f'{BLUE}Error processing ComicInfo.xml in \'{d}\': {e}{RESET}')
+            logger.error(f"{ORANGE}Failed to rename directory {d.name}: {e}{RESET}")
 
 
 def delete_info():
-    for root, _, files in os.walk(CWD):
-        for f in files:
-            if f == 'info.txt':
-                try:
-                    os.remove(os.path.join(root, f))
-                    print(f'Deleted {ORANGE}\'{f}\'{RESET} from {GREEN}\'{os.path.basename(root)}\'{RESET}')
-                except Exception as e:
-                    print(f'{BLUE}Error deleting file {f}: {e}{RESET}')
+    for d in CWD.rglob("info.txt"):
+        try:
+            d.unlink()
+            logger.info(f"Deleted {BLUE}{d.name}{RESET} from {GREEN}'{d.parent.name}'{RESET}")
+        except Exception as e:
+            logger.error(f"{ORANGE}Error deleting file {d.name} in {d.parent.name}: {e}{RESET}")
 
 
 def zip_and_rename():
-    for d in os.listdir(CWD):
-        path = os.path.join(CWD, d)
-        if os.path.isdir(path):
-            try:
-                zip_path = shutil.make_archive(d, 'zip', root_dir=path)
-                cbz_path = os.path.join(CWD, f'{d}.cbz')
-                os.rename(zip_path, cbz_path)
-                print(f'Zipped and renamed: {GREEN}\'{d}\'{RESET} -> {ORANGE}\'{os.path.basename(cbz_path)}\'{RESET}')
-            except Exception as e:
-                print(f'{BLUE}Error zipping and renaming {path}: {e}{RESET}')
+    for d in sorted([d for d in CWD.iterdir() if d.is_dir()], key=lambda x: x.name.lower()):
+        try:
+            zip_path = shutil.make_archive(str(d), 'zip', root_dir=str(d))
+            cbz_path = d.with_suffix('.cbz')
+            Path(zip_path).rename(cbz_path)
+            logger.info(f"Zipped and renamed: {GREEN}'{d.name}'{RESET} -> {BLUE}'{cbz_path.name}'{RESET}")
+        except Exception as e:
+            logger.error(f"{ORANGE}Error zipping and renaming {d.name}: {e}{RESET}")
 
 
-def process_manga():
+def main():
     move_files_to_new_folder()
-    states = check_comicinfo()
-    convert_images(states)
-    rename_images(states)
-    metadata()
-    rename_directories()
-    update_comicinfo_number_and_count()
-    synchronize_titles()
+
+    dirs_to_process = sorted(
+        [d for d in CWD.iterdir() if d.is_dir() and not (d / "ComicInfo.xml").exists()],
+        key=lambda x: x.name.lower()
+    )
+
+    if dirs_to_process:
+        convert_images(dirs_to_process)
+        rename_images(dirs_to_process)
+
+    process_comicinfo()
+    synchronize_titles_and_clear_duplicates()
+    rename_dirs_from_comicinfo()
     delete_info()
     zip_and_rename()
 
 
-process_manga()
+if __name__ == "__main__":
+    main()
