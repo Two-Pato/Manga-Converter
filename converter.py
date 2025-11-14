@@ -351,13 +351,28 @@ def rename_dirs_from_comicinfo():
             logger.error(f"{ORANGE}Failed to rename directory {d.name}: {e}{RESET}")
 
 
-def delete_info():
+def delete_info_and_imgs():
+    # Delete all info.txt files
     for d in CWD.rglob("info.txt"):
         try:
             d.unlink()
             logger.info(f"Deleted {BLUE}{d.name}{RESET} from {GREEN}'{d.parent.name}'{RESET}")
         except Exception as e:
             logger.error(f"{ORANGE}Error deleting file {d.name} in {d.parent.name}: {e}{RESET}")
+
+    # Delete all images that are NOT .jpg
+    valid_ext = {".jpg"}
+
+    for folder in [i for i in CWD.rglob("*") if i.is_dir()]:
+        for f in folder.iterdir():
+            if f.is_file():
+                ext = f.suffix.lower()
+                if ext not in valid_ext and ext in {".png", ".jpeg", ".webp", ".tif", ".tiff", ".avif", ".gif"}:
+                    try:
+                        f.unlink()
+                        logger.info(f"Deleted {BLUE}{f.name}{RESET} from {GREEN}'{folder.name}'{RESET}")
+                    except Exception as e:
+                        logger.error(f"{ORANGE}Error deleting non-JPG {f.name} in {folder.name}: {e}{RESET}")
 
 
 def zip_and_rename():
@@ -386,7 +401,7 @@ def main():
     process_comicinfo()
     synchronize_titles_and_clear_duplicates()
     rename_dirs_from_comicinfo()
-    delete_info()
+    delete_info_and_imgs()
     zip_and_rename()
 
 
