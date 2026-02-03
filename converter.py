@@ -189,37 +189,65 @@ def update_comicinfo_metadata(comicinfo_file: Path, info_data: dict, number: int
     excluded_tags = load_excluded_tags()
     exclude_pattern = re.compile(r'^(C\d{2,3}|Comic.*)$', re.IGNORECASE)
 
+    def normalize_tag(tag: str) -> str:
+        tag = re.sub(r'[♀♂]', '', tag)
+        tag = " ".join(tag.split())
+
+        words = []
+        for word in tag.split():
+            if "-" in word:
+                words.append("-".join(w.capitalize() for w in word.split("-")))
+            else:
+                words.append(word.capitalize())
+
+        return " ".join(words)
+
     if info_data:
-        original_tags = info_data.get("TAGS", "")
+        original_tags = str(info_data.get("TAGS", "") or "")
         filtered_tags = []
+        seen = set()
 
         if original_tags:
-            for tag in original_tags.split(","):
-                cleaned = tag.strip()
-                lower = cleaned.lower()
-                if lower in excluded_tags or exclude_pattern.match(cleaned):
-                    continue
-                filtered_tags.append(cleaned)
+            cleaned = re.sub(r'[♀♂]', '', original_tags)
 
-        # Map fields from info.txt into ComicInfo elements
+            raw_tags = re.split(r',|\s{2,}', cleaned)
+
+            for raw in raw_tags:
+                raw = raw.strip()
+                if not raw:
+                    continue
+
+                normalized = normalize_tag(raw)
+                key = normalized.lower()
+
+                if key in excluded_tags:
+                    continue
+                if exclude_pattern.match(normalized):
+                    continue
+
+                if key in seen:
+                    continue
+
+                seen.add(key)
+                filtered_tags.append(normalized)
+
         fields = {
             "Title": info_data.get("ORIGINAL TITLE", ""),
             "LocalizedSeries": info_data.get("TITLE", ""),
             "Writer": info_data.get("ARTIST", ""),
-            "Tags": ", ".join(filtered_tags)
+            "Tags": ", ".join(filtered_tags),
         }
 
         for tag_name, value in fields.items():
             elem = root.find(tag_name)
             if elem is None:
                 elem = ET.SubElement(root, tag_name)
-            # ensure explicit empty string for empty elements (not None)
             elem.text = value if value is not None else ""
 
     counts_fields = {
         "Number": str(number),
         "Count": str(count),
-        "PageCount": str(page_count)
+        "PageCount": str(page_count),
     }
 
     for tag_name, value in counts_fields.items():
@@ -228,7 +256,7 @@ def update_comicinfo_metadata(comicinfo_file: Path, info_data: dict, number: int
             elem = ET.SubElement(root, tag_name)
         elem.text = value
 
-    # Write using our specialized writer that preserves empty-tag form and Tag whitespace
+    # Preserve empty-tag form and tag whitespace
     write_xml_with_tags_whitespace(tree, str(comicinfo_file), expand_tags=["LocalizedSeries"])
 
 
@@ -294,7 +322,7 @@ def synchronize_titles_and_clear_duplicates():
                 elem = root.find(tag_name)
                 if elem is None:
                     elem = ET.SubElement(root, tag_name)
-                # ensure explicit empty string when value is empty
+                # Ensure explicit empty string when value is empty
                 elem.text = value if value is not None else ""
 
                 if (elem.text or "").strip() != (value or "").strip():
