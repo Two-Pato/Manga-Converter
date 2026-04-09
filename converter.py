@@ -8,14 +8,14 @@ from pathlib import Path
 from lxml import etree as ET
 
 
-# ── ANSI colours ─────────────────────────────────────────────────────────────
+# ANSI colour codes.
 GREEN  = "\033[32m"
 BLUE   = "\033[34m"
 ORANGE = "\033[38;5;214m"
 RED    = "\033[31m"
 RESET  = "\033[0m"
 
-# ── Paths ─────────────────────────────────────────────────────────────────────
+# Directory paths.
 SCRIPT_DIR = Path(__file__).parent
 DATA_DIR   = SCRIPT_DIR / "data"
 CWD        = Path.cwd()
@@ -26,7 +26,7 @@ logging.basicConfig(level=logging.INFO, format="%(message)s")
 log = logging.getLogger(__name__)
 
 
-# ── Helpers ───────────────────────────────────────────────────────────────────
+# Helper functions.
 
 def _sorted_dirs(root: Path = CWD) -> list[Path]:
     return sorted((d for d in root.iterdir() if d.is_dir()), key=lambda x: x.name.lower())
@@ -39,7 +39,7 @@ def _sorted_files(root: Path, suffixes: set[str]) -> list[Path]:
     )
 
 
-# ── Step 1: unpack CBZ files and collect loose files ─────────────────────────
+# Step 1: Unpack CBZ files and collect loose files.
 
 def move_files_to_new_folder() -> None:
     cbz_files = _sorted_files(CWD, {".cbz"})
@@ -86,7 +86,7 @@ def _move_remaining_files(name: str = "temp") -> None:
         log.info(f"Moved {BLUE}{f.name}{RESET} -> {GREEN}{target.name}{RESET}")
 
 
-# ── Step 2: convert images to JPG ────────────────────────────────────────────
+# Step 2: Convert images to JPG.
 
 def convert_images(dirs: list[Path]) -> None:
     for d in dirs:
@@ -105,13 +105,13 @@ def convert_images(dirs: list[Path]) -> None:
                 log.error(f"{ORANGE}Failed to process {img.name} in {GREEN}{d.name}{RESET}: {e}{RESET}")
 
 
-# ── Step 3: rename images to zero-padded sequence ────────────────────────────
+# Step 3: Rename images to a zero-padded sequence.
 
 def rename_images(dirs: list[Path]) -> None:
     for d in dirs:
         files = _sorted_files(d, {".jpg"})
 
-        # Phase 1: rename to temporary names to avoid collisions
+        # Phase 1: Rename to temporary names to avoid collisions.
         tmp_paths: list[tuple[Path, str]] = []
         for idx, f in enumerate(files):
             tmp = d / f"tmp_{idx:03}.jpg"
@@ -121,7 +121,7 @@ def rename_images(dirs: list[Path]) -> None:
             except Exception as e:
                 log.error(f"{ORANGE}Failed to rename {f.name} in {GREEN}{d.name}{RESET}: {e}{RESET}")
 
-        # Phase 2: rename from temporary names to final names
+        # Phase 2: Rename from temporary names to final names.
         for tmp, final_name in tmp_paths:
             try:
                 tmp.rename(d / final_name)
@@ -130,7 +130,7 @@ def rename_images(dirs: list[Path]) -> None:
                 log.error(f"{ORANGE}Failed to finalise {tmp.name} in {GREEN}{d.name}{RESET}: {e}{RESET}")
 
 
-# ── Step 4: ComicInfo.xml helpers ─────────────────────────────────────────────
+# Step 4: ComicInfo.xml helpers.
 
 def read_info_txt(path: Path) -> dict[str, str]:
     if not path.exists():
@@ -157,12 +157,12 @@ def write_xml_with_tags_whitespace(
     tree: ET._ElementTree,
     out_path: Path,
 ) -> None:
-    """Write the XML tree, then post-process to normalise formatting quirks."""
+    # Write the XML tree, then post-process to normalise formatting quirks.
     tree.write(out_path, encoding="utf-8", xml_declaration=True, pretty_print=True)
 
     text = out_path.read_text(encoding="utf-8")
 
-    # Normalise XML declaration quote style
+    # Normalise the XML declaration quote style.
     text = re.sub(
         r"<\?xml version=['\"]1\.0['\"] encoding=['\"]UTF-8['\"]\s*\?>",
         '<?xml version="1.0" encoding="utf-8"?>',
@@ -170,10 +170,10 @@ def write_xml_with_tags_whitespace(
         count=1,
     )
 
-    # Expand ALL self-closing tags to explicit open/close pairs
+    # Expand all self-closing tags to explicit open/close pairs.
     text = re.sub(r'<([A-Za-z][A-Za-z0-9]*)\s*/>', r'<\1></\1>', text)
 
-    # Ensure a blank line around <Tags>
+    # Ensure a blank line around <Tags>.
     text = re.sub(
         r'\n\s*(<Tags>.*?</Tags>)\s*\n',
         r'\n\n  \1\n\n',
@@ -181,20 +181,20 @@ def write_xml_with_tags_whitespace(
         flags=re.DOTALL,
     )
 
-    # Collapse runs of 3+ newlines
+    # Collapse runs of three or more newlines.
     text = re.sub(r'\n{3,}', '\n\n', text)
 
     out_path.write_text(text, encoding="utf-8")
 
 
-# ── Step 5: populate / update ComicInfo.xml ───────────────────────────────────
+# Step 5: Populate or update ComicInfo.xml.
 
 _EXCLUDE_PATTERN = re.compile(r'^(C\d{2,3}|Comic.*)$', re.IGNORECASE)
 
 
 def _normalize_tag(tag: str) -> str:
     tag = re.sub(r'[♀♂]', '', tag).strip()
-    tag = " ".join(tag.split())  # collapse whitespace
+    tag = " ".join(tag.split())  # Collapse internal whitespace.
     words = []
     for word in tag.split():
         words.append(
@@ -250,7 +250,7 @@ def update_comicinfo_metadata(
 
 
 def _set_elements(root: ET._Element, fields: dict[str, str]) -> None:
-    """Create or update child elements on *root* from a name→value mapping."""
+    # Create or update child elements on root from a name-to-value mapping.
     for tag, value in fields.items():
         elem = root.find(tag)
         if elem is None:
@@ -279,12 +279,12 @@ def process_comicinfo() -> None:
         update_comicinfo_metadata(comicinfo, info_data, number=idx, count=total, page_count=page_count, excluded_tags=excluded)
 
 
-# ── Step 6: synchronise titles across volumes ─────────────────────────────────
+# Step 6: Synchronise titles across volumes.
 
 def synchronize_titles_and_clear_duplicates() -> None:
     dirs = _sorted_dirs()
 
-    # Find the entry with Number=1 to use as the title source
+    # Find the entry with Number=1 to use as the title source.
     first_title, first_localized = "", ""
     found = False
 
@@ -317,7 +317,7 @@ def synchronize_titles_and_clear_duplicates() -> None:
 
             _set_elements(root, {"Title": first_title, "LocalizedSeries": first_localized})
 
-            # Clear LocalizedSeries when it duplicates Title
+            # Clear LocalizedSeries when it duplicates Title.
             title_text     = (root.findtext("Title",           "") or "").strip()
             localized_text = (root.findtext("LocalizedSeries", "") or "").strip()
             if title_text and title_text.lower() == localized_text.lower():
@@ -333,7 +333,7 @@ def synchronize_titles_and_clear_duplicates() -> None:
             log.error(f"{ORANGE}Failed to parse ComicInfo.xml in {d.name}: {e}{RESET}")
 
 
-# ── Step 7: rename directories from metadata ─────────────────────────────────
+# Step 7: Rename directories from metadata.
 
 def rename_dirs_from_comicinfo() -> None:
     for d in _sorted_dirs():
@@ -368,7 +368,7 @@ def rename_dirs_from_comicinfo() -> None:
             log.error(f"{ORANGE}Failed to rename {d.name}: {e}{RESET}")
 
 
-# ── Step 8: clean up info.txt and non-JPG images ─────────────────────────────
+# Step 8: Clean up info.txt and non-JPG images.
 
 def delete_info_and_imgs() -> None:
     for path in CWD.rglob("info.txt"):
@@ -389,7 +389,7 @@ def delete_info_and_imgs() -> None:
                     log.error(f"{ORANGE}Error deleting {f.name} in {folder.name}: {e}{RESET}")
 
 
-# ── Step 9: zip directories to CBZ ───────────────────────────────────────────
+# Step 9: Zip directories to CBZ.
 
 def zip_and_rename() -> None:
     for d in _sorted_dirs():
@@ -402,12 +402,12 @@ def zip_and_rename() -> None:
             log.error(f"{ORANGE}Error packing {d.name}: {e}{RESET}")
 
 
-# ── Entry point ───────────────────────────────────────────────────────────────
+# Entry point.
 
 def main() -> None:
     move_files_to_new_folder()
 
-    # Only process directories that don't already have a ComicInfo.xml
+    # Only process directories that don't already have a ComicInfo.xml.
     dirs_to_process = [
         d for d in _sorted_dirs()
         if not (d / "ComicInfo.xml").exists()
