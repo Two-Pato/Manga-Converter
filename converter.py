@@ -60,7 +60,7 @@ def _unpack_cbz_files(cbz_files: list[Path]) -> None:
         extract_dir = CWD / f.stem
         extract_dir.mkdir(exist_ok=True)
         try:
-            shutil.unpack_archive(str(f), str(extract_dir), format="zip")
+            shutil.unpack_archive(f, extract_dir, format="zip")
             log.info(f"Extracted {BLUE}{f.name}{RESET} -> {GREEN}{extract_dir.name}{RESET}")
             f.unlink()
             log.info(f"Deleted {BLUE}{f.name}{RESET}")
@@ -82,7 +82,7 @@ def _move_remaining_files(name: str = "temp") -> None:
     log.info(f"Created directory {GREEN}{target.name}{RESET}")
 
     for f in files:
-        shutil.move(str(f), str(target / f.name))
+        shutil.move(f, target / f.name)
         log.info(f"Moved {BLUE}{f.name}{RESET} -> {GREEN}{target.name}{RESET}")
 
 
@@ -109,15 +109,25 @@ def convert_images(dirs: list[Path]) -> None:
 
 def rename_images(dirs: list[Path]) -> None:
     for d in dirs:
-        for idx, f in enumerate(_sorted_files(d, {".jpg"})):
-            new_name = f"{idx:03}.jpg"
-            if f.name == new_name:
-                continue
+        files = _sorted_files(d, {".jpg"})
+
+        # Phase 1: rename to temporary names to avoid collisions
+        tmp_paths: list[tuple[Path, str]] = []
+        for idx, f in enumerate(files):
+            tmp = d / f"tmp_{idx:03}.jpg"
             try:
-                f.rename(d / new_name)
-                log.info(f"Renamed {BLUE}{f.name}{RESET} -> {BLUE}{new_name}{RESET}")
+                f.rename(tmp)
+                tmp_paths.append((tmp, f"{idx:03}.jpg"))
             except Exception as e:
                 log.error(f"{ORANGE}Failed to rename {f.name} in {GREEN}{d.name}{RESET}: {e}{RESET}")
+
+        # Phase 2: rename from temporary names to final names
+        for tmp, final_name in tmp_paths:
+            try:
+                tmp.rename(d / final_name)
+                log.info(f"Renamed {BLUE}{tmp.name}{RESET} -> {BLUE}{final_name}{RESET}")
+            except Exception as e:
+                log.error(f"{ORANGE}Failed to finalise {tmp.name} in {GREEN}{d.name}{RESET}: {e}{RESET}")
 
 
 # ── Step 4: ComicInfo.xml helpers ─────────────────────────────────────────────
@@ -145,12 +155,12 @@ def load_excluded_tags() -> set[str]:
 
 def write_xml_with_tags_whitespace(
     tree: ET._ElementTree,
-    out_path: str | Path,
+    out_path: Path,
 ) -> None:
     """Write the XML tree, then post-process to normalise formatting quirks."""
-    tree.write(str(out_path), encoding="utf-8", xml_declaration=True, pretty_print=True)
+    tree.write(out_path, encoding="utf-8", xml_declaration=True, pretty_print=True)
 
-    text = Path(out_path).read_text(encoding="utf-8")
+    text = out_path.read_text(encoding="utf-8")
 
     # Normalise XML declaration quote style
     text = re.sub(
@@ -174,7 +184,7 @@ def write_xml_with_tags_whitespace(
     # Collapse runs of 3+ newlines
     text = re.sub(r'\n{3,}', '\n\n', text)
 
-    Path(out_path).write_text(text, encoding="utf-8")
+    out_path.write_text(text, encoding="utf-8")
 
 
 # ── Step 5: populate / update ComicInfo.xml ───────────────────────────────────
@@ -201,13 +211,14 @@ def update_comicinfo_metadata(
     number: int,
     count: int,
     page_count: int,
+    excluded_tags: set[str] | None = None,
 ) -> None:
     parser = ET.XMLParser(remove_blank_text=True)
-    tree   = ET.parse(str(comicinfo_file), parser)
+    tree   = ET.parse(comicinfo_file, parser)
     root   = tree.getroot()
 
     if info_data:
-        excluded = load_excluded_tags()
+        excluded = excluded_tags if excluded_tags is not None else load_excluded_tags()
         raw_tags = re.split(r',|\s{2,}', re.sub(r'[♀♂]', '', info_data.get("TAGS", "") or ""))
         seen: set[str] = set()
         filtered: list[str] = []
@@ -248,9 +259,10 @@ def _set_elements(root: ET._Element, fields: dict[str, str]) -> None:
 
 
 def process_comicinfo() -> None:
-    dirs            = _sorted_dirs()
-    total           = len(dirs)
-    default_xml     = DATA_DIR / "ComicInfo.xml"
+    dirs         = _sorted_dirs()
+    total        = len(dirs)
+    default_xml  = DATA_DIR / "ComicInfo.xml"
+    excluded     = load_excluded_tags()
 
     if not default_xml.exists():
         log.error(f"{ORANGE}Default ComicInfo.xml missing in {DATA_DIR}{RESET}")
@@ -264,7 +276,7 @@ def process_comicinfo() -> None:
 
         page_count = len(_sorted_files(d, {".jpg"}))
         info_data  = read_info_txt(d / "info.txt")
-        update_comicinfo_metadata(comicinfo, info_data, number=idx, count=total, page_count=page_count)
+        update_comicinfo_metadata(comicinfo, info_data, number=idx, count=total, page_count=page_count, excluded_tags=excluded)
 
 
 # ── Step 6: synchronise titles across volumes ─────────────────────────────────
@@ -274,24 +286,24 @@ def synchronize_titles_and_clear_duplicates() -> None:
 
     # Find the entry with Number=1 to use as the title source
     first_title, first_localized = "", ""
-    source_dir = None
+    found = False
 
     for d in dirs:
         comicinfo = d / "ComicInfo.xml"
         if not comicinfo.exists():
             continue
         try:
-            root = ET.parse(str(comicinfo)).getroot()
+            root = ET.parse(comicinfo).getroot()
             num  = root.findtext("Number", "").strip()
             if num == "1":
-                source_dir      = d
+                found           = True
                 first_title     = (root.findtext("Title",           "") or "").strip()
                 first_localized = (root.findtext("LocalizedSeries", "") or "").strip()
                 break
         except ET.XMLSyntaxError:
             continue
 
-    if source_dir is None:
+    if not found:
         log.warning(f"{ORANGE}No directory with Number=1 found; skipping title sync{RESET}")
         return
 
@@ -300,7 +312,7 @@ def synchronize_titles_and_clear_duplicates() -> None:
         if not comicinfo.exists():
             continue
         try:
-            tree = ET.parse(str(comicinfo))
+            tree = ET.parse(comicinfo)
             root = tree.getroot()
 
             _set_elements(root, {"Title": first_title, "LocalizedSeries": first_localized})
@@ -330,7 +342,7 @@ def rename_dirs_from_comicinfo() -> None:
             log.warning(f"{ORANGE}ComicInfo.xml missing in {d.name}; skipping rename{RESET}")
             continue
         try:
-            root   = ET.parse(str(comicinfo)).getroot()
+            root   = ET.parse(comicinfo).getroot()
             title  = root.find("Title")
             number = root.find("Number")
 
@@ -338,7 +350,12 @@ def rename_dirs_from_comicinfo() -> None:
                 log.warning(f"{ORANGE}Title or Number missing in {d.name}; skipping rename{RESET}")
                 continue
 
-            new_name = f"{title.text.strip()} v{int(number.text.strip()):02}"
+            title_text  = (title.text  or "").strip()
+            number_text = (number.text or "").strip()
+            if not title_text or not number_text:
+                log.warning(f"{ORANGE}Empty Title or Number in {d.name}; skipping rename{RESET}")
+                continue
+            new_name = f"{title_text} v{int(number_text):02}"
             new_path = CWD / new_name
 
             if d.name != new_name:
