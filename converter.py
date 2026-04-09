@@ -39,6 +39,11 @@ def _sorted_files(root: Path, suffixes: set[str]) -> list[Path]:
     )
 
 
+def _has_sequence_gaps(files: list[Path]) -> bool:
+    # Check whether the sorted JPGs form a gap-free zero-padded sequence.
+    return any(f.stem != f"{idx:03}" for idx, f in enumerate(files))
+
+
 # Step 1: Unpack CBZ files and collect loose files.
 
 def move_files_to_new_folder() -> None:
@@ -355,6 +360,7 @@ def rename_dirs_from_comicinfo() -> None:
             if not title_text or not number_text:
                 log.warning(f"{ORANGE}Empty Title or Number in {d.name}; skipping rename{RESET}")
                 continue
+
             new_name = f"{title_text} v{int(number_text):02}"
             new_path = CWD / new_name
 
@@ -415,6 +421,14 @@ def main() -> None:
     if dirs_to_process:
         convert_images(dirs_to_process)
         rename_images(dirs_to_process)
+
+    # Resequence images in existing dirs if a file was added or removed.
+    for d in _sorted_dirs():
+        if (d / "ComicInfo.xml").exists() and not (d / "info.txt").exists():
+            files = _sorted_files(d, {".jpg"})
+            if _has_sequence_gaps(files):
+                log.info(f"Gap detected in {GREEN}{d.name}{RESET}, resequencing images.")
+                rename_images([d])
 
     process_comicinfo()
     synchronize_titles_and_clear_duplicates()
