@@ -231,10 +231,12 @@ def update_comicinfo_metadata(comicinfo_file: Path, info_data: dict, number: int
                 seen.add(key)
                 filtered_tags.append(normalized)
 
+        writer = info_data.get("ARTIST") or info_data.get("CIRCLE", "")
+
         fields = {
             "Title": info_data.get("ORIGINAL TITLE", ""),
             "LocalizedSeries": info_data.get("TITLE", ""),
-            "Writer": info_data.get("ARTIST", ""),
+            "Writer": writer,
             "Tags": ", ".join(filtered_tags),
         }
 
