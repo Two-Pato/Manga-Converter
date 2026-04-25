@@ -98,6 +98,9 @@ def convert_images(dirs: list[Path]) -> None:
         for img in _sorted_files(d, IMAGE_EXTENSIONS):
             cmd = [
                 "magick", "mogrify",
+                "-background", "white",
+                "-alpha", "remove",
+                "-alpha", "off",
                 "-format", "jpg",
                 "-quality", "100",
                 "-resize", "x2500",
