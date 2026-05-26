@@ -38,10 +38,13 @@ def _sorted_files(root: Path, suffixes: set[str]) -> list[Path]:
         key=lambda x: x.name.lower(),
     )
 
-
 def _has_sequence_gaps(files: list[Path]) -> bool:
     # Check whether the sorted JPGs form a gap-free zero-padded sequence.
     return any(f.stem != f"{idx:03}" for idx, f in enumerate(files))
+
+def _needs_full_image_processing(d: Path) -> bool:
+    files = _sorted_files(d, IMAGE_EXTENSIONS)
+    return bool(files) and files[0].stem == "0"
 
 
 # Step 1: Unpack CBZ files and collect loose files.
@@ -416,18 +419,25 @@ def zip_and_rename() -> None:
 def main() -> None:
     move_files_to_new_folder()
 
-    # Only process directories that don't already have a ComicInfo.xml.
-    dirs_to_process = [
-        d for d in _sorted_dirs()
-        if not (d / "ComicInfo.xml").exists()
-    ]
+    dirs_without_xml = [d for d in _sorted_dirs() if not (d / "ComicInfo.xml").exists()]
+
+    dirs_needs_reprocess: set[Path] = set()
+    for d in _sorted_dirs():
+        if (d / "ComicInfo.xml").exists() and _needs_full_image_processing(d):
+            log.info(f"New images detected in {GREEN}{d.name}{RESET} — Full image processing required.")
+            dirs_needs_reprocess.add(d)
+
+    dirs_to_process = dirs_without_xml + list(dirs_needs_reprocess)
     if dirs_to_process:
         convert_images(dirs_to_process)
         rename_images(dirs_to_process)
 
-    # Resequence images in existing dirs if a file was added or removed.
     for d in _sorted_dirs():
-        if (d / "ComicInfo.xml").exists() and not (d / "info.txt").exists():
+        if (
+            (d / "ComicInfo.xml").exists()
+            and not (d / "info.txt").exists()
+            and d not in dirs_needs_reprocess
+        ):
             files = _sorted_files(d, {".jpg"})
             if _has_sequence_gaps(files):
                 log.info(f"Gap detected in {GREEN}{d.name}{RESET}, resequencing images.")
