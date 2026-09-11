@@ -3,8 +3,8 @@ import logging
 import re
 import shutil
 import subprocess
-from pathlib import Path
 
+from pathlib import Path
 from lxml import etree as ET
 
 
@@ -32,10 +32,13 @@ def _sorted_dirs(root: Path = CWD) -> list[Path]:
     return sorted((d for d in root.iterdir() if d.is_dir()), key=lambda x: x.name.lower())
 
 
+def _natural_key(stem: str):
+    return [int(t) if t.isdigit() else t for t in re.split(r'(\d+)', stem.lower())]
+
 def _sorted_files(root: Path, suffixes: set[str]) -> list[Path]:
     return sorted(
         (f for f in root.iterdir() if f.is_file() and f.suffix.lower() in suffixes),
-        key=lambda x: x.name.lower(),
+        key=lambda x: _natural_key(x.stem),
     )
 
 def _has_sequence_gaps(files: list[Path]) -> bool:
